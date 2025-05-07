@@ -6,19 +6,12 @@ on:
       environment:
         description: 'Environment to deploy to'
         required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - staging
+        type: environment
       auto_approve:
         description: 'Auto approve the plan'
         required: true
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
+        default: false
+        type: boolean
 
 permissions:
   contents: read

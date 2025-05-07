@@ -10,25 +10,6 @@ terraform {
       version = "3.3.0"
     }
   }
-
-  backend "s3" {
-    bucket = "projetfinal-tfstate"
-
-    endpoints = {
-      s3 = "https://nbg1.your-objectstorage.com"
-    }
-
-    access_key = ""
-    secret_key = ""
-
-    key                         = "terraform.tfstate"
-    region                      = "nbg1"
-    skip_requesting_account_id  = true
-    skip_credentials_validation = true
-    skip_metadata_api_check     = true
-    skip_region_validation      = true
-    use_path_style              = true
-  }
 }
 
 provider "hcloud" {
@@ -46,24 +27,27 @@ provider "minio" {
   minio_ssl      = true
 }
 
-resource "random_uuid" "id" {}
 
 resource "minio_s3_bucket" "bucket" {
-  bucket         = random_uuid.id.result
+  bucket         = "s3-${var.project_name}-prod"
   acl            = "private"
   object_locking = false
 }
 
 resource "hcloud_ssh_key" "ssh_key" {
-  name       = "ssh-${var.project_name}"
+  name       = "ssh-${var.project_name}-prod"
   public_key = file("~/.ssh/hetzner.pub")
 }
 
 resource "hcloud_server" "manager" {
-  name        = "srv-${var.project_name}-manager"
+  name        = "srv-${var.project_name}-manager-prod"
   image       = "debian-12"
   server_type = var.server_type
   location    = var.location
+  labels = {
+    "type" = "manager"
+    "env"  = "prod"
+  }
 
   public_net {
     ipv4_enabled = true
@@ -74,10 +58,15 @@ resource "hcloud_server" "manager" {
 }
 
 resource "hcloud_server" "worker1" {
-  name        = "srv-${var.project_name}-worker1"
+  name        = "srv-${var.project_name}-worker1-prod"
   image       = "debian-12"
   server_type = var.server_type
   location    = var.location
+
+  labels = {
+    "type" = "worker"
+    "env"  = "prod"
+  }
 
   public_net {
     ipv4_enabled = true
@@ -88,10 +77,15 @@ resource "hcloud_server" "worker1" {
 }
 
 resource "hcloud_server" "worker2" {
-  name        = "srv-${var.project_name}-worker2"
+  name        = "srv-${var.project_name}-worker2-prod"
   image       = "debian-12"
   server_type = var.server_type
   location    = var.location
+
+  labels = {
+    "type" = "worker"
+    "env"  = "prod"
+  }
 
   public_net {
     ipv4_enabled = true
@@ -106,6 +100,9 @@ resource "hcloud_server" "worker2" {
 resource "hcloud_network" "network" {
   name     = "net-${var.project_name}"
   ip_range = "10.0.0.0/16"
+  labels = {
+    "env" = "prod"
+  }
 }
 
 resource "hcloud_network_subnet" "subnet" {
@@ -114,6 +111,8 @@ resource "hcloud_network_subnet" "subnet" {
   network_zone = "eu-central"
 
   ip_range = "10.0.0.0/24"
+
+
 }
 
 resource "hcloud_server_network" "manager_network" {

@@ -1,10 +1,3 @@
-variable "hcloud_token" {
-  sensitive = true
-}
-
-# variable "access_key" {}
-# variable "secret_key" {}
-
 variable "project_name" {
   type    = string
   default = "projetfinal"

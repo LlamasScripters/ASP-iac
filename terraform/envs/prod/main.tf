@@ -4,39 +4,21 @@ terraform {
       source  = "hetznercloud/hcloud"
       version = "1.50.0"
     }
+  }
 
-    minio = {
-      source  = "aminueza/minio"
-      version = "3.3.0"
+  backend "remote" {
+    organization = "moustaphachegdali"
+    workspaces {
+      name = "projetfinal"
     }
   }
 }
 
 provider "hcloud" {
-  token = var.hcloud_token
 }
 
-variable "access_key" {}
-variable "secret_key" {}
-
-provider "minio" {
-  minio_server   = "nbg1.your-objectstorage.com"
-  minio_user     = var.access_key
-  minio_password = var.secret_key
-  minio_region   = "nbg1"
-  minio_ssl      = true
-}
-
-
-resource "minio_s3_bucket" "bucket" {
-  bucket         = "s3-${var.project_name}-prod"
-  acl            = "private"
-  object_locking = false
-}
-
-resource "hcloud_ssh_key" "ssh_key" {
-  name       = "ssh-${var.project_name}-prod"
-  public_key = file("~/.ssh/hetzner.pub")
+data "hcloud_ssh_key" "ssh_key" {
+  name = "ssh-${var.project_name}-prod"
 }
 
 resource "hcloud_server" "manager" {
@@ -54,7 +36,7 @@ resource "hcloud_server" "manager" {
     ipv6_enabled = true
   }
 
-  ssh_keys = [hcloud_ssh_key.ssh_key.id]
+  ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
 }
 
 resource "hcloud_server" "worker1" {
@@ -73,7 +55,7 @@ resource "hcloud_server" "worker1" {
     ipv6_enabled = true
   }
 
-  ssh_keys = [hcloud_ssh_key.ssh_key.id]
+  ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
 }
 
 resource "hcloud_server" "worker2" {
@@ -92,8 +74,7 @@ resource "hcloud_server" "worker2" {
     ipv6_enabled = true
   }
 
-  ssh_keys = [hcloud_ssh_key.ssh_key.id]
-
+  ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
 }
 
 
@@ -111,8 +92,6 @@ resource "hcloud_network_subnet" "subnet" {
   network_zone = "eu-central"
 
   ip_range = "10.0.0.0/24"
-
-
 }
 
 resource "hcloud_server_network" "manager_network" {

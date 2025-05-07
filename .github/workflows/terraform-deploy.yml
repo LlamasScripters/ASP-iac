@@ -1,0 +1,115 @@
+name: 'Terraform Deploy'
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      auto_approve:
+        description: 'Auto approve the plan'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.11.4"
+        cli_coonfig_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+    - name: Terraform Format
+      id: fmt
+      run: terraform fmt -check
+      continue-on-error: true
+
+    - name: Terraform Init
+      id: init
+      env:
+        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      run: terraform init
+      working-directory: ./terraform/envs/prod
+
+    - name: Terraform Validate
+      id: validate
+      env:
+        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      run: terraform validate
+      working-directory: ./terraform/envs/prod
+
+    - name: Terraform Plan
+      id: plan
+      env:
+        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      run: terraform plan -no-color -out=tfplan
+      working-directory: ./terraform/envs/prod
+      continue-on-error: true
+
+    - name: Save Plan
+      uses: actions/upload-artifact@v4
+      with:
+        name: tfplan
+        path: ./terraform/envs/prod/tfplan
+        retention-days: 1
+
+    - name: Show Plan
+      env:
+        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      run: terraform show -no-color tfplan
+      working-directory: ./terraform/envs/prod
+
+  apply:
+    name: 'Apply'
+    needs: terraform
+    if: github.event.inputs.auto_approve == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.11.4"
+
+    - name: Download Plan
+      uses: actions/download-artifact@v4
+      with:
+        name: tfplan
+        path: ./terraform/envs/prod
+
+    - name: Terraform Init
+      env:
+        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      run: terraform init
+      working-directory: ./terraform/envs/prod
+
+    - name: Terraform Apply
+      env:
+        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      run: terraform apply -auto-approve tfplan
+      working-directory: ./terraform/envs/prod 

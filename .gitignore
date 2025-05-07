@@ -3,3 +3,4 @@
 .env
 state.config
 terraform.tfstate*
+tfplan

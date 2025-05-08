@@ -37,6 +37,12 @@ resource "hcloud_server" "manager" {
   }
 
   ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
+
+  lifecycle {
+    ignore_changes = [ssh_keys]
+  }
+
+  user_data = file("cloud-init.yaml")
 }
 
 resource "hcloud_server" "worker1" {
@@ -56,6 +62,12 @@ resource "hcloud_server" "worker1" {
   }
 
   ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
+
+  lifecycle {
+    ignore_changes = [ssh_keys]
+  }
+
+  user_data = file("cloud-init.yaml")
 }
 
 resource "hcloud_server" "worker2" {
@@ -75,8 +87,13 @@ resource "hcloud_server" "worker2" {
   }
 
   ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
-}
 
+  lifecycle {
+    ignore_changes = [ssh_keys]
+  }
+
+  user_data = file("cloud-init.yaml")
+}
 
 resource "hcloud_network" "network" {
   name     = "net-${var.project_name}"

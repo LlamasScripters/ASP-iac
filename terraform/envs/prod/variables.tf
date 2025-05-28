@@ -1,6 +1,6 @@
 variable "project_name" {
   type    = string
-  default = "projetfinal"
+  default = "asphub"
 }
 
 variable "location" {

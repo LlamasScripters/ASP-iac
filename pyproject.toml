@@ -1,0 +1,9 @@
+[project]
+name = "asp-hub-iac"
+version = "1.0.0"
+description = "IaC repository to create and manage infrastructure for ASP Hub project"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ansible>=11.6.0",
+]

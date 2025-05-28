@@ -3,12 +3,6 @@
 package_update: true
 package_upgrade: true
 
-packages:
-  - git
-  - curl
-  - docker.io
-  - docker-compose
-
 keyboard:
   layout: us
 
@@ -21,15 +15,3 @@ ssh_import_id:
 
 disable_root: true
 disable_root_opts: no-port-forwarding,no-agent-forwarding,no-X11-forwarding
-
-write_files:
-  - path: /etc/motd
-    content: |
-      Connected to $(hostname -I | awk '{print $1}')
-
-final_message: "The system is up, after $UPTIME seconds"
-
-runcmd:
-  - systemctl enable docker
-  - systemctl start docker
-  - chmod +x /etc/update-motd.d/99-custom

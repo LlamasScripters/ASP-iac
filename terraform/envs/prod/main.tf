@@ -14,6 +14,10 @@ terraform {
   }
 }
 
+locals {
+  image = "ubuntu-24.04"
+}
+
 provider "hcloud" {
 }
 
@@ -23,7 +27,7 @@ data "hcloud_ssh_key" "ssh_key" {
 
 resource "hcloud_server" "manager" {
   name        = "srv-${var.project_name}-manager-prod"
-  image       = "debian-12"
+  image       = local.image
   server_type = var.server_type
   location    = var.location
   labels = {
@@ -47,7 +51,7 @@ resource "hcloud_server" "manager" {
 
 resource "hcloud_server" "worker1" {
   name        = "srv-${var.project_name}-worker1-prod"
-  image       = "debian-12"
+  image       = local.image
   server_type = var.server_type
   location    = var.location
 
@@ -72,7 +76,7 @@ resource "hcloud_server" "worker1" {
 
 resource "hcloud_server" "worker2" {
   name        = "srv-${var.project_name}-worker2-prod"
-  image       = "debian-12"
+  image       = local.image
   server_type = var.server_type
   location    = var.location
 

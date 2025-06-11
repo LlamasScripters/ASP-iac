@@ -1,9 +1,0 @@
----
-ansible_user: root
-ansible_ssh_private_key_file: ~/.ssh/id_ed25519
-
-# Docker Swarm configuration
-swarm_interface: "eth0"
-swarm_port: 2377
-swarm_worker_token: "{{ lookup('password', '/dev/null length=32 chars=hexdigits') }}"
-swarm_manager_token: "{{ lookup('password', '/dev/null length=32 chars=hexdigits') }}" 

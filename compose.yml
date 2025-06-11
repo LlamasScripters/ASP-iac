@@ -1,0 +1,13 @@
+services:
+  ansible:
+    build:
+      context: ./ansible
+      dockerfile: Dockerfile
+    container_name: ansible
+    image: mchegdali/ansible:latest
+    volumes:
+      - ./ansible:/ansible
+      - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519
+    working_dir: /ansible
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["tail -f /dev/null"]

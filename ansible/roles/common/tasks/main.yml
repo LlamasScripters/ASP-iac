@@ -1,4 +1,0 @@
----
-- name: Include Docker CE role
-  include_role:
-    name: haxorof.docker_ce

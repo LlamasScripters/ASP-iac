@@ -1,0 +1,13 @@
+all:
+  children:
+    manager:
+      hosts:
+        ${MANAGER_IP}:
+      vars:
+        ansible_ssh_user: asphub
+    worker:
+      hosts:
+        ${WORKER1_IP}:
+        ${WORKER2_IP}:
+      vars:
+        ansible_ssh_user: asphub

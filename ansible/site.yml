@@ -1,7 +1,0 @@
----
-- name: Configure Docker Swarm
-  hosts: all
-  become: yes
-  roles:
-    - common
-    - swarm 

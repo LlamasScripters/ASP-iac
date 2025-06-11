@@ -4,3 +4,4 @@
 state.config
 terraform.tfstate*
 tfplan
+ansible/inventory.yml

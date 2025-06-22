@@ -1,0 +1,35 @@
+---
+- name: Pull Portainer image
+  community.docker.docker_image_pull:
+    name: portainer/portainer-ce:2.27.6-alpine
+
+- name: Pull Portainer agent image
+  community.docker.docker_image_pull:
+    name: portainer/agent:2.27.6-alpine
+
+- name: Create Portainer folder
+  ansible.builtin.file:
+    path: /app/portainer
+    state: directory
+    mode: '0755'
+
+- name: Copy portainer compose file
+  ansible.builtin.copy:
+    src: compose.yml
+    dest: /app/portainer/compose.yml
+    mode: '0644'
+
+- name: Create portainer network
+  community.docker.docker_network:
+    name: agent_network
+    driver: overlay
+    scope: swarm
+
+- name: Deploy portainer
+  community.docker.docker_stack:
+    name: portainer
+    state: present
+    compose: /app/portainer/compose.yml
+  environment:
+    VIRTUAL_HOST: '{{ portainer_domain }}'
+    # LETSENCRYPT_HOST: '{{ portainer_domain }}'

@@ -1,0 +1,43 @@
+services:
+  agent:
+    image: portainer/agent:2.27.6-alpine
+    environment:
+      AGENT_CLUSTER_ADDR: tasks.agent
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+    networks:
+      - agent_network
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.platform.os == linux
+
+  portainer:
+    image: portainer/portainer-ce:2.27.6-alpine
+    command: -H tcp://tasks.agent:9001 --tlsskipverify
+    volumes:
+      - portainer-data:/data
+    networks:
+      - agent_network
+      - proxy
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+    environment:
+      - VIRTUAL_HOST=${VIRTUAL_HOST}
+      - VIRTUAL_PORT=${VIRTUAL_PORT}
+      # - LETSENCRYPT_HOST=${LETSENCRYPT_HOST}
+
+networks:
+  proxy:
+    external: true
+  agent_network:
+    external: true
+
+volumes:
+  portainer-data:

@@ -1,0 +1,49 @@
+services:
+  nginx-proxy:
+    image: 'nginxproxy/nginx-proxy:1.7.1-alpine'
+    container_name: nginx-proxy
+    ports:
+      - '80:80'
+      - '443:443'
+    networks:
+      - proxy
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - certs:/etc/nginx/certs:ro
+      - html:/usr/share/nginx/html
+  
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+        max_replicas_per_node: 1
+      replicas: 1
+
+  nginx-proxy-acme:
+    image: 'nginxproxy/acme-companion:2.6.0'
+    container_name: nginx-proxy-acme
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - acme:/etc/acme.sh
+      - certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+    environment:
+      - DEFAULT_EMAIL=${EMAIL}
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+        max_replicas_per_node: 1
+      replicas: 1
+    networks:
+      - proxy
+
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  certs:
+  html:
+  acme:

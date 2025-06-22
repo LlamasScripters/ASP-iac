@@ -1,0 +1,49 @@
+---
+# - name: Pull nginx image
+#   community.docker.docker_image_pull:
+#     name: jc21/nginx-proxy-manager:2.12.3
+
+- name: Pull nginx image
+  community.docker.docker_image_pull:
+    name: nginxproxy/nginx-proxy:1.7.1-alpine
+
+- name: Pull nginx acme image
+  community.docker.docker_image_pull:
+    name: nginxproxy/acme-companion:2.6.0
+
+- name: Copy nginx files
+  ansible.builtin.copy:
+    src: .
+    dest: /app/nginx/
+    mode: '0644'
+
+- name: Create npm_hsts config
+  community.docker.docker_config:
+    name: npm_hsts
+    data_src: /app/nginx/npm_hsts.txt
+    state: present
+
+- name: Create nginx network
+  community.docker.docker_network:
+    name: proxy
+    driver: overlay
+    scope: global
+
+# - name: Deploy nginx
+#   community.docker.docker_stack:
+#     name: proxy
+#     state: present
+#     compose: /app/nginx/compose.yml
+#   environment:
+#     USERNAME: '{{ nginx_username }}'
+#     EMAIL: '{{ nginx_email }}'
+#     DOMAIN: '{{ nginx_domain }}'
+#     PASSWORD: '{{ nginx_password }}'
+
+- name: Deploy nginx
+  community.docker.docker_stack:
+    name: proxy
+    state: present
+    compose: /app/nginx/compose.yml
+  environment:
+    EMAIL: '{{ nginx_email }}'

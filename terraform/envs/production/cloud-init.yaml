@@ -10,14 +10,12 @@ timezone: Europe/Paris
 
 users:
   - name: asphub
-    lock_passwd: true
-    passwd: $6$UU1m7IUP.tqDbnBO$TWRGq5/Ar2oSAHp6otLjPc4EOzksa7mSsZ.5ULzcGJXon1Tf3GIVqBd1YHXJQ5QtbNvcvI8EjlJWVwAEJ4CmU1
     ssh_import_id:
       - gh:mchegdali
       - gh:iSaaMz
       - gh:MoussaST
       - gh:AriaAman
-    groups: users,sudo
+    groups: users,sudo, docker
     sudo: ALL=(ALL) NOPASSWD:ALL
 
 allow_public_ssh_keys: true

@@ -4,6 +4,11 @@ terraform {
       source  = "hetznercloud/hcloud"
       version = "1.50.0"
     }
+
+    ovh = {
+      source  = "ovh/ovh"
+      version = "2.4.0"
+    }
   }
 
   backend "remote" {
@@ -19,6 +24,9 @@ locals {
 }
 
 provider "hcloud" {
+}
+
+provider "ovh" {
 }
 
 data "hcloud_ssh_key" "ssh_key" {
@@ -101,7 +109,7 @@ resource "hcloud_server" "worker2" {
 
 resource "hcloud_network" "network" {
   name     = "net-${var.project_name}"
-  ip_range = "10.0.0.0/16"
+  ip_range = "192.168.0.0/16"
   labels = {
     "env" = "prod"
   }
@@ -112,23 +120,44 @@ resource "hcloud_network_subnet" "subnet" {
   type         = "cloud"
   network_zone = "eu-central"
 
-  ip_range = "10.0.0.0/24"
+  ip_range = "192.168.0.0/24"
 }
 
 resource "hcloud_server_network" "manager_network" {
   server_id  = hcloud_server.manager.id
   network_id = hcloud_network.network.id
-  ip         = "10.0.0.10"
+  ip         = "192.168.0.100"
 }
 
 resource "hcloud_server_network" "worker1_network" {
   server_id  = hcloud_server.worker1.id
   network_id = hcloud_network.network.id
-  ip         = "10.0.0.11"
+  ip         = "192.168.0.101"
 }
 
 resource "hcloud_server_network" "worker2_network" {
   server_id  = hcloud_server.worker2.id
   network_id = hcloud_network.network.id
-  ip         = "10.0.0.12"
+  ip         = "192.168.0.102"
+}
+
+data "ovh_domain_zone" "root_zone" {
+  name = "mchegdali.cloud"
+}
+
+resource "ovh_domain_zone_record" "asphub_prod_dns" {
+  zone      = data.ovh_domain_zone.root_zone.name
+  subdomain = ""
+  fieldtype = "A"
+  target    = hcloud_server.manager.ipv4_address
+}
+
+resource "ovh_domain_zone_record" "asphub_prod_portainer" {
+  zone      = data.ovh_domain_zone.root_zone.name
+  subdomain = "portainer"
+  fieldtype = "CNAME"
+  ttl       = 3600
+  target    = "${data.ovh_domain_zone.root_zone.name}."
+
+  depends_on = [ovh_domain_zone_record.asphub_prod_dns]
 }

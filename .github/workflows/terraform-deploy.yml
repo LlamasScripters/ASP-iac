@@ -1,4 +1,4 @@
-name: 'Terraform Deploy'
+name: 'Deploy Infrastructure'
 
 on:
   workflow_dispatch:
@@ -18,10 +18,23 @@ permissions:
   pull-requests: write
 
 jobs:
-  terraform:
-    name: 'Terraform'
+  get-environment:
+    name: 'Get Environment'
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Get Environment
+        id: get-environment
+        run: |
+          ENVIRONMENT=${{ github.event.inputs.environment }}
+          ENVIRONMENT=${ENVIRONMENT@L}
+          echo "ENVIRONMENT=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
+
+  terraform-plan:
+    name: 'Terraform Plan'
+    runs-on: ubuntu-latest
+    environment: ${{ github.job.get-environment.outputs.ENVIRONMENT }}
+    env:
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
 
     steps:
     - name: Checkout
@@ -40,45 +53,40 @@ jobs:
 
     - name: Terraform Init
       id: init
-      env:
-        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
       run: terraform init
-      working-directory: ./terraform/envs/prod
+      working-directory: ./terraform/envs/${{ github.event.inputs.environment }}
 
     - name: Terraform Validate
       id: validate
-      env:
-        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
       run: terraform validate
-      working-directory: ./terraform/envs/prod
+      working-directory: ./terraform/envs/${{ github.event.inputs.environment }}
 
     - name: Terraform Plan
       id: plan
-      env:
-        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
       run: terraform plan -no-color -out=tfplan
-      working-directory: ./terraform/envs/prod
-      continue-on-error: true
+      working-directory: ./terraform/envs/${{ github.event.inputs.environment }}
 
     - name: Save Plan
       uses: actions/upload-artifact@v4
       with:
         name: tfplan
-        path: ./terraform/envs/prod/tfplan
+        path: ./terraform/envs/${{ github.event.inputs.environment }}/tfplan
         retention-days: 1
 
     - name: Show Plan
       env:
         HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
       run: terraform show -no-color tfplan
-      working-directory: ./terraform/envs/prod
+      working-directory: ./terraform/envs/${{ github.event.inputs.environment }}
 
-  apply:
-    name: 'Apply'
-    needs: terraform
+  terraform-apply:
+    name: 'Terraform Apply'
+    needs: terraform-plan
     if: github.event.inputs.auto_approve == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
+    environment: ${{ github.job.get-environment.outputs.ENVIRONMENT }}
+    env:
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
 
     steps:
     - name: Checkout
@@ -94,16 +102,14 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: tfplan
-        path: ./terraform/envs/prod
+        path: ./terraform/envs/${{ github.event.inputs.environment }}
 
     - name: Terraform Init
-      env:
-        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
       run: terraform init
-      working-directory: ./terraform/envs/prod
+      working-directory: ./terraform/envs/${{ github.event.inputs.environment }}
 
     - name: Terraform Apply
-      env:
-        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
       run: terraform apply -auto-approve tfplan
-      working-directory: ./terraform/envs/prod 
+      working-directory: ./terraform/envs/${{ github.event.inputs.environment }}
+    
+

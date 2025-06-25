@@ -1,0 +1,24 @@
+services:
+  webserver:
+    image: nginx:1.29.0-alpine
+    networks:
+      - proxy
+    environment:
+      - VIRTUAL_HOST=${VIRTUAL_HOST}
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == worker
+
+    configs:
+      - source: npm_hsts
+        target: /app/templates/_hsts.conf
+
+networks:
+  proxy:
+    external: true
+
+configs:
+  npm_hsts:
+    external: true

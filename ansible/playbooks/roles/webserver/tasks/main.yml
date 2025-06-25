@@ -1,0 +1,26 @@
+---
+- name: Pull nginx image
+  community.docker.docker_image_pull:
+    name: nginx:1.29.0-alpine
+
+- name: Copy nginx files
+  ansible.builtin.copy:
+    src: .
+    dest: /app/webserver/
+    mode: '0644'
+
+
+- name: Create npm_hsts config
+  community.docker.docker_config:
+    name: npm_hsts
+    data_src: /app/webserver/npm_hsts.txt
+    state: present
+
+- name: Deploy nginx proxy
+  community.docker.docker_stack:
+    name: webserver
+    state: present
+    detach: false
+    compose: /app/webserver/compose.yml
+  environment:
+    VIRTUAL_HOST: '{{ nginx_domain }}'

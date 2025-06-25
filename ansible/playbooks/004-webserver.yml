@@ -1,0 +1,7 @@
+---
+- name: Setup webserver
+  hosts: manager
+  become: true
+
+  roles:
+    - webserver

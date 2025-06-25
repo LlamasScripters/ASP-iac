@@ -11,6 +11,8 @@ services:
       - /var/run/docker.sock:/tmp/docker.sock:ro
       - certs:/etc/nginx/certs:ro
       - html:/usr/share/nginx/html
+    labels:
+      - "com.github.nginx-proxy.nginx"
   
     deploy:
       placement:

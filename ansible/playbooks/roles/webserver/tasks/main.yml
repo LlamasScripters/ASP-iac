@@ -16,11 +16,11 @@
     data_src: /app/webserver/npm_hsts.txt
     state: present
 
-- name: Deploy nginx proxy
+- name: Deploy webserver
   community.docker.docker_stack:
     name: webserver
     state: present
-    detach: false
+    detach: true
     compose: /app/webserver/compose.yml
   environment:
-    VIRTUAL_HOST: '{{ nginx_domain }}'
+    DOMAIN: '{{ webserver_domain }}'

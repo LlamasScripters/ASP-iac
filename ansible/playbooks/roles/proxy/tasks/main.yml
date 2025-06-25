@@ -1,38 +1,35 @@
 ---
-- name: Pull nginx proxy image
+- name: Pull proxy image
   community.docker.docker_image_pull:
-    name: nginxproxy/nginx-proxy:1.7.1-alpine
+    name: traefik:v3.4
 
-- name: Pull nginx proxy acme image
-  community.docker.docker_image_pull:
-    name: nginxproxy/acme-companion:2.6.0
-
-- name: Copy nginx proxy files
+- name: Copy proxy files
   ansible.builtin.copy:
     src: .
     dest: /app/proxy/
     mode: '0644'
-    
-- name: Check if nginx network exists
+
+- name: Check if proxy network exists
   community.docker.docker_network_info:
     name: proxy
   register: network_info
-  ignore_errors: true
 
-- name: Create proxy network
+- name: Create proxy network if not exists
   community.docker.docker_network:
     name: proxy
     driver: overlay
     scope: swarm
     state: present
-    
   when: network_info.network is not defined or network_info.network is none
-  ignore_errors: true
 
-- name: Deploy nginx proxy
+- name: Deploy proxy
   community.docker.docker_stack:
     name: proxy
     state: present
+    detach: true
     compose: /app/proxy/compose.yml
   environment:
-    EMAIL: '{{ nginx_email }}'
+    LETSENCRYPT_EMAIL: '{{ letsencrypt_email }}'
+    DOMAIN: '{{ domain }}'
+    PROXY_USER: '{{ proxy_username }}'
+    PROXY_PASSWORD: '{{ proxy_password }}'

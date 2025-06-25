@@ -29,7 +29,7 @@
   community.docker.docker_stack:
     name: portainer
     state: present
+    detach: true
     compose: /app/portainer/compose.yml
   environment:
-    VIRTUAL_HOST: '{{ portainer_domain }}'
-    # LETSENCRYPT_HOST: '{{ portainer_domain }}'
+    PORTAINER_DOMAIN: '{{ portainer_domain }}'

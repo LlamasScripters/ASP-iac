@@ -47,6 +47,3 @@ ansible-playbook playbooks/001-setup.yml
 ansible-playbook playbooks/002-swarm.yml
 ansible-playbook playbooks/003-manager.yml
 ansible-playbook playbooks/004-webserver.yml
-
-# TODO: Add webserver and database
-# ansible-playbook playbooks/004-workers.yml 

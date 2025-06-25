@@ -28,10 +28,17 @@ services:
       placement:
         constraints:
           - node.role == manager
-    environment:
-      - VIRTUAL_HOST=${VIRTUAL_HOST}
-      - VIRTUAL_PORT=${VIRTUAL_PORT}
-      # - LETSENCRYPT_HOST=${LETSENCRYPT_HOST}
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.portainer.rule=Host(`${PORTAINER_DOMAIN}`)"
+        - "traefik.http.routers.portainer.service=portainer"
+        - "traefik.http.routers.portainer.entrypoints=websecure"
+        - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+        - "traefik.http.routers.portainer.tls=true"
+        - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
+        - "traefik.http.services.portainer.loadbalancer.passhostheader=true"
+        - "traefik.http.routers.portainer.middlewares=compresstraefik"
+        - "traefik.http.middlewares.compresstraefik.compress=true"
 
 networks:
   proxy:

@@ -1,3 +1,3 @@
-nginx_email: moustapha.chegdali@gmail.com
-nginx_domain: mchegdali.cloud
+letsencrypt_email: moustapha.chegdali@gmail.com
+domain: mchegdali.cloud
 portainer_domain: portainer.mchegdali.cloud

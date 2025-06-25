@@ -3,10 +3,16 @@ services:
     image: nginx:1.29.0-alpine
     networks:
       - proxy
-    environment:
-      - VIRTUAL_HOST=${VIRTUAL_HOST}
     deploy:
       replicas: 2
+      
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.webserver.rule=Host(`${DOMAIN}`)"
+        - "traefik.http.routers.webserver.entrypoints=websecure"
+        - "traefik.http.routers.webserver.tls=true"
+        - "traefik.http.routers.webserver.tls.certresolver=letsencrypt"
+        - "traefik.http.services.webserver.loadbalancer.server.port=80"
       placement:
         constraints:
           - node.role == worker
@@ -14,6 +20,7 @@ services:
     configs:
       - source: npm_hsts
         target: /app/templates/_hsts.conf
+
 
 networks:
   proxy:

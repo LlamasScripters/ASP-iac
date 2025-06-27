@@ -1,6 +1,6 @@
 services:
-  webserver:
-    image: nginx:1.29.0-alpine
+  webserver-frontend:
+    image: mchegdali/asphub-client
     networks:
       - proxy
     deploy:
@@ -8,24 +8,39 @@ services:
       
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.webserver.rule=Host(`${DOMAIN}`)"
-        - "traefik.http.routers.webserver.entrypoints=websecure"
-        - "traefik.http.routers.webserver.tls=true"
-        - "traefik.http.routers.webserver.tls.certresolver=letsencrypt"
-        - "traefik.http.services.webserver.loadbalancer.server.port=80"
+        - "traefik.http.routers.asphub.rule=Host(`${DOMAIN}`) && PathPrefix(`/`)"
+        - "traefik.http.routers.asphub.entrypoints=websecure"
+        - "traefik.http.routers.asphub.tls=true"
+        - "traefik.http.routers.asphub.tls.certresolver=letsencrypt"
+        - "traefik.http.services.asphub.loadbalancer.server.port=80"
+        - "asphub.autodeploy=true"
       placement:
         constraints:
           - node.role == worker
-
-    configs:
-      - source: npm_hsts
-        target: /app/templates/_hsts.conf
+  webserver-backend:
+    image: mchegdali/asphub-server
+    networks:
+      - proxy
+    deploy:
+      replicas: 2
+      
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.asphub.rule=Host(`${DOMAIN}`) && PathPrefix(`/api`)"
+        - "traefik.http.routers.asphub.entrypoints=websecure"
+        - "traefik.http.routers.asphub.tls=true"
+        - "traefik.http.routers.asphub.tls.certresolver=letsencrypt"
+        - "traefik.http.services.asphub.loadbalancer.server.port=3000"
+        - "asphub.autodeploy=true"
+      placement:
+        constraints:
+          - node.role == worker
 
 
 networks:
   proxy:
     external: true
 
-configs:
-  npm_hsts:
-    external: true
+# configs:
+#   npm_hsts:
+#     external: true

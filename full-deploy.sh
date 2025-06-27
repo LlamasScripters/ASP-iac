@@ -61,9 +61,9 @@ fi
 
 terraform -chdir=$TERRAFORM_DIR apply -auto-approve
 
-WORKER2_IP=$(terraform -chdir="$TERRAFORM_DIR" output -raw worker2_ip)
-WORKER1_IP=$(terraform -chdir="$TERRAFORM_DIR" output -raw worker1_ip)
 MANAGER_IP=$(terraform -chdir="$TERRAFORM_DIR" output -raw manager_ip)
+WORKER1_IP=$(terraform -chdir="$TERRAFORM_DIR" output -raw worker1_ip)
+WORKER2_IP=$(terraform -chdir="$TERRAFORM_DIR" output -raw worker2_ip)
 
 cd $ANSIBLE_DIR
 ./run-ansible.sh --manager-ip $MANAGER_IP --worker1-ip $WORKER1_IP --worker2-ip $WORKER2_IP

@@ -1,20 +1,26 @@
 ---
-- name: Pull nginx image
+- name: Pull frontend image
   community.docker.docker_image_pull:
-    name: nginx:1.29.0-alpine
+    name: mchegdali/asphub-client
+    pull: always
 
-- name: Copy nginx files
+- name: Pull backend image
+  community.docker.docker_image_pull:
+    name: mchegdali/asphub-server
+    pull: always
+    
+- name: Copy frontend files
   ansible.builtin.copy:
     src: .
-    dest: /app/webserver/
+    dest: /app/webserver/client
     mode: '0644'
 
+- name: Copy backend files
+  ansible.builtin.copy:
+    src: .
+    dest: /app/webserver/server
+    mode: '0644'
 
-- name: Create npm_hsts config
-  community.docker.docker_config:
-    name: npm_hsts
-    data_src: /app/webserver/npm_hsts.txt
-    state: present
 
 - name: Deploy webserver
   community.docker.docker_stack:

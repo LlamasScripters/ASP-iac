@@ -25,12 +25,6 @@ services:
       placement:
         constraints:
           - node.role == manager
-      labels:
-        - "traefik.http.routers.http-catchall.rule=hostregexp(`{host:.+}`)"
-        - "traefik.http.routers.http-catchall.entrypoints=web"
-        - "traefik.http.routers.http-catchall.middlewares=redirect-to-https@swarm"
-        - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
-        - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
       mode: global
 
     networks:

@@ -5,99 +5,119 @@ terraform {
       version = "1.50.0"
     }
 
-    minio = {
-      source  = "aminueza/minio"
-      version = "3.3.0"
+    ovh = {
+      source  = "ovh/ovh"
+      version = "2.4.0"
+    }
+
+    ansible = {
+      source  = "ansible/ansible"
+      version = "1.3.0"
+    }
+  }
+
+  backend "remote" {
+    organization = "moustaphachegdali"
+    workspaces {
+      name = "asphub-staging"
     }
   }
 }
 
+locals {
+  image = "ubuntu-24.04"
+}
+
 provider "hcloud" {
-  token = var.hcloud_token
 }
 
-variable "access_key" {}
-variable "secret_key" {}
-
-provider "minio" {
-  minio_server   = "nbg1.your-objectstorage.com"
-  minio_user     = var.access_key
-  minio_password = var.secret_key
-  minio_region   = "nbg1"
-  minio_ssl      = true
+provider "ovh" {
 }
 
-
-resource "minio_s3_bucket" "bucket" {
-  bucket         = "s3-${var.project_name}-staging"
-  acl            = "private"
-  object_locking = false
-}
-
-resource "hcloud_ssh_key" "ssh_key" {
-  name       = "ssh-${var.project_name}-staging"
-  public_key = file("~/.ssh/hetzner.pub")
+data "hcloud_ssh_key" "ssh_key" {
+  name = "ssh-${var.project_name}-sta"
 }
 
 resource "hcloud_server" "manager" {
-  name        = "srv-${var.project_name}-manager-staging"
-  image       = "debian-12"
+  name        = "srv-${var.project_name}-manager-sta"
+  image       = local.image
   server_type = var.server_type
   location    = var.location
-  labels = merge(var.labels, {
+  labels = {
     "type" = "manager"
-  })
+    "env"  = "staging"
+  }
 
   public_net {
     ipv4_enabled = true
     ipv6_enabled = true
   }
 
-  ssh_keys = [hcloud_ssh_key.ssh_key.id]
+  ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
+
+  lifecycle {
+    ignore_changes = [ssh_keys]
+  }
+
+  user_data = file("cloud-init.yaml")
 }
 
 resource "hcloud_server" "worker1" {
-  name        = "srv-${var.project_name}-worker1-staging"
-  image       = "debian-12"
+  name        = "srv-${var.project_name}-worker1-sta"
+  image       = local.image
   server_type = var.server_type
   location    = var.location
 
-  labels = merge(var.labels, {
+  labels = {
     "type" = "worker"
-  })
+    "env"  = "staging"
+  }
 
   public_net {
     ipv4_enabled = true
     ipv6_enabled = true
   }
 
-  ssh_keys = [hcloud_ssh_key.ssh_key.id]
+  ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
+
+  lifecycle {
+    ignore_changes = [ssh_keys]
+  }
+
+  user_data = file("cloud-init.yaml")
 }
 
 resource "hcloud_server" "worker2" {
-  name        = "srv-${var.project_name}-worker2-staging"
-  image       = "debian-12"
+  name        = "srv-${var.project_name}-worker2-sta"
+  image       = local.image
   server_type = var.server_type
   location    = var.location
 
-  labels = merge(var.labels, {
+  labels = {
     "type" = "worker"
-  })
+    "env"  = "staging"
+  }
 
   public_net {
     ipv4_enabled = true
     ipv6_enabled = true
   }
 
-  ssh_keys = [hcloud_ssh_key.ssh_key.id]
+  ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
 
+  lifecycle {
+    ignore_changes = [ssh_keys]
+  }
+
+  user_data = file("cloud-init.yaml")
 }
 
-
 resource "hcloud_network" "network" {
-  name     = "net-${var.project_name}"
-  ip_range = "10.0.0.0/16"
-  labels   = var.labels
+  name     = "net-${var.project_name}-sta"
+  ip_range = "192.168.0.0/16"
+  labels = {
+    "env" = "staging"
+  }
 }
 
 resource "hcloud_network_subnet" "subnet" {
@@ -105,25 +125,104 @@ resource "hcloud_network_subnet" "subnet" {
   type         = "cloud"
   network_zone = "eu-central"
 
-  ip_range = "10.0.0.0/24"
-
-
+  ip_range = "192.168.0.0/24"
 }
 
 resource "hcloud_server_network" "manager_network" {
   server_id  = hcloud_server.manager.id
   network_id = hcloud_network.network.id
-  ip         = "10.0.0.10"
+  ip         = "192.168.0.100"
 }
 
 resource "hcloud_server_network" "worker1_network" {
   server_id  = hcloud_server.worker1.id
   network_id = hcloud_network.network.id
-  ip         = "10.0.0.11"
+  ip         = "192.168.0.101"
 }
 
 resource "hcloud_server_network" "worker2_network" {
   server_id  = hcloud_server.worker2.id
   network_id = hcloud_network.network.id
-  ip         = "10.0.0.12"
+  ip         = "192.168.0.102"
+}
+
+#region DNS
+
+data "ovh_domain_zone" "root_zone" {
+  name = "mchegdali.cloud"
+}
+
+locals {
+  domain     = data.ovh_domain_zone.root_zone.name
+  subdomains = ["grafana", "traefik", "asphub", "prometheus", "alertmanager"]
+}
+
+resource "ovh_domain_zone_record" "primary_dns" {
+  zone      = local.domain
+  subdomain = ""
+  fieldtype = "A"
+  target    = hcloud_server.manager.ipv4_address
+}
+
+resource "ovh_domain_zone_record" "subdomains" {
+  zone      = local.domain
+  for_each  = toset(local.subdomains)
+  subdomain = each.value
+  fieldtype = "CNAME"
+  ttl       = 3600
+  target    = "${local.domain}."
+
+  depends_on = [ovh_domain_zone_record.primary_dns]
+}
+
+#endregion DNS
+
+#region Ansible
+
+resource "ansible_group" "managers" {
+  name = "managers"
+
+  variables = {
+    domain = local.domain
+  }
+}
+
+resource "ansible_group" "workers" {
+  name = "workers"
+}
+
+resource "ansible_host" "manager" {
+  name   = hcloud_server.manager.name
+  groups = ["managers"]
+
+  variables = {
+    ansible_user = "asphub"
+    ansible_host = hcloud_server.manager.ipv4_address
+  }
+
+  depends_on = [ansible_group.managers, hcloud_server.manager]
+}
+
+resource "ansible_host" "worker1" {
+  name   = hcloud_server.worker1.name
+  groups = ["workers"]
+
+  variables = {
+    ansible_user = "asphub"
+    ansible_host = hcloud_server.worker1.ipv4_address
+  }
+
+  depends_on = [ansible_group.workers, hcloud_server.worker1]
+}
+
+resource "ansible_host" "worker2" {
+  name   = hcloud_server.worker2.name
+  groups = ["workers"]
+
+  variables = {
+    ansible_user = "asphub"
+    ansible_host = hcloud_server.worker2.ipv4_address
+  }
+
+  depends_on = [ansible_group.workers, hcloud_server.worker2]
 }

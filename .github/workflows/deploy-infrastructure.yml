@@ -1,6 +1,9 @@
 name: "Deploy Infrastructure"
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       environment:
@@ -8,28 +11,39 @@ on:
         required: true
         type: environment
       auto_approve:
-        description: "Auto approve the plan"
-        required: true
+        description: "Auto approve the plan (ignored for main branch - always auto-approved)"
+        required: false
         default: false
         type: boolean
 
 permissions:
   contents: read
   pull-requests: write
+  packages: write
 
 jobs:
   get-environment:
+    # Environment to lowercase to match folder name
     name: "Get Environment"
     runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.get-environment.outputs.ENVIRONMENT }}
+      repository_owner: ${{ steps.get-environment.outputs.REPOSITORY_OWNER }}
     steps:
       - name: Get Environment
         id: get-environment
         run: |
-          ENVIRONMENT=${{ github.event.inputs.environment }}
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENVIRONMENT=${{ github.event.inputs.environment }}
+          else
+            # Main branch push defaults to production
+            ENVIRONMENT="production"
+          fi
+          REPOSITORY_OWNER="${{ github.repository_owner }}"
           ENVIRONMENT=${ENVIRONMENT@L}
+          REPOSITORY_OWNER=${REPOSITORY_OWNER@L}
           echo "ENVIRONMENT=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
+          echo "REPOSITORY_OWNER=${REPOSITORY_OWNER}" >> "$GITHUB_OUTPUT"
 
   terraform-plan:
     name: "Terraform Plan"
@@ -55,22 +69,19 @@ jobs:
 
       - name: Terraform Format
         id: fmt
-        run: terraform fmt -check
+        run: terraform fmt -check  -recursive -no-color
 
       - name: Terraform Init
         id: init
-        run: terraform init
-        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
+        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} init -no-color
 
       - name: Terraform Validate
         id: validate
-        run: terraform validate
-        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
+        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} validate -no-color
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -no-color -out=tfplan
-        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
+        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} plan -no-color -out=tfplan
 
       - name: Save Plan
         uses: actions/upload-artifact@v4
@@ -82,13 +93,17 @@ jobs:
       - name: Show Plan
         env:
           HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
-        run: terraform show -no-color tfplan
-        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
+        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} show -no-color tfplan
 
   terraform-apply:
     name: "Terraform Apply"
     needs: [get-environment, terraform-plan]
-    if: github.event.inputs.auto_approve == 'true'
+    if: |
+      (
+        github.event_name == 'push' && github.ref == 'refs/heads/main'
+      ) || (
+        github.event_name == 'workflow_dispatch' && github.event.inputs.auto_approve == 'true'
+      )
     runs-on: ubuntu-latest
     environment: ${{ needs.get-environment.outputs.environment }}
     outputs:
@@ -119,46 +134,55 @@ jobs:
           path: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
 
       - name: Terraform Init
-        run: terraform init
-        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
+        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} init
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve tfplan
-        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
+        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} apply -auto-approve tfplan
 
       - name: Get Terraform Outputs
         id: terraform-output
         run: |
-          echo "manager_ip=$(terraform output -raw manager_ip)" >> "$GITHUB_OUTPUT"
-          echo "worker1_ip=$(terraform output -raw worker1_ip)" >> "$GITHUB_OUTPUT"
-          echo "worker2_ip=$(terraform output -raw worker2_ip)" >> "$GITHUB_OUTPUT"
-        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
+          echo "manager_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw manager_ip)" >> "$GITHUB_OUTPUT"
+          echo "worker1_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker1_ip)" >> "$GITHUB_OUTPUT"
+          echo "worker2_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker2_ip)" >> "$GITHUB_OUTPUT"
 
   ansible-deploy:
     name: "Ansible Deploy"
     needs: [get-environment, terraform-apply]
-    if: github.event.inputs.auto_approve == 'true'
+    if: |
+      (
+        github.event_name == 'push' && github.ref == 'refs/heads/main'
+      ) || (
+        github.event_name == 'workflow_dispatch' && github.event.inputs.auto_approve == 'true'
+      )
     runs-on: ubuntu-latest
     environment: ${{ needs.get-environment.outputs.environment }}
     env:
-      MANAGER_IP: ${{ needs.terraform-apply.outputs.manager_ip }}
-      WORKER1_IP: ${{ needs.terraform-apply.outputs.worker1_ip }}
-      WORKER2_IP: ${{ needs.terraform-apply.outputs.worker2_ip }}
       ANSIBLE_VAULT_PASS: ${{ secrets.ANSIBLE_VAULT_PASS }}
+      GITHUB_USERNAME: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Token to pull images from ghcr.io
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Install the latest version of uv
+        id: setup-uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: |
+            "pyproject.toml"
+            "uv.lock"
+            ".python-version"
+
+      - name: Check uv cache hit
+        if: steps.setup-uv.outputs.cache-hit == 'true'
+        run: echo "Cache was restored"
 
       - name: Install Ansible
         run: |
-          python -m pip install --upgrade pip
-          pip install ansible
+          uv sync
 
       - name: Setup SSH key
         env:

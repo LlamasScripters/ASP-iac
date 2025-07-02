@@ -1,0 +1,123 @@
+name: "Destroy Infrastructure"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to destroy"
+        required: true
+        type: environment
+      confirm_destroy:
+        description: 'Type "DESTROY" to confirm (case sensitive)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: "Validate Confirmation"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Confirmation
+        if: github.event.inputs.confirm_destroy != 'DESTROY'
+        run: |
+          echo "Error: You must type 'DESTROY' to confirm"
+          exit 1
+
+  get-environment:
+    # Environment to lowercase to match folder name
+    name: "Get Environment"
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.get-environment.outputs.ENVIRONMENT }}
+      repository_owner: ${{ steps.get-environment.outputs.REPOSITORY_OWNER }}
+    steps:
+      - name: Get Environment
+        id: get-environment
+        run: |
+          ENVIRONMENT=${{ github.event.inputs.environment }}
+          REPOSITORY_OWNER="${{ github.repository_owner }}"
+          ENVIRONMENT=${ENVIRONMENT@L}
+          REPOSITORY_OWNER=${REPOSITORY_OWNER@L}
+          echo "ENVIRONMENT=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
+          echo "REPOSITORY_OWNER=${REPOSITORY_OWNER}" >> "$GITHUB_OUTPUT"
+
+  terraform:
+    name: "Terraform"
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.4"
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+          OVH_ENDPOINT: ${{ secrets.OVH_ENDPOINT }}
+          OVH_APPLICATION_KEY: ${{ secrets.OVH_APPLICATION_KEY }}
+          OVH_APPLICATION_SECRET: ${{ secrets.OVH_APPLICATION_SECRET }}
+          OVH_CONSUMER_KEY: ${{ secrets.OVH_CONSUMER_KEY }}
+        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} init
+
+      - name: Terraform Plan Destroy
+        id: plan
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} plan -destroy -no-color -out=tfplan
+        continue-on-error: true
+
+      - name: Save Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: ./terraform/envs/${{ needs.get-environment.outputs.environment }}/tfplan
+          retention-days: 1
+
+      - name: Show Plan
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} show -no-color tfplan
+
+  destroy:
+    name: "Destroy"
+    needs: [terraform, get-environment]
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.4"
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Download Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
+
+      - name: Terraform Init
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: terraform init
+        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
+
+      - name: Terraform Apply
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: terraform apply -auto-approve tfplan
+        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}

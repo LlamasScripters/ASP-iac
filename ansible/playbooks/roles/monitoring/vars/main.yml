@@ -1,0 +1,25 @@
+---
+# Monitoring Stack Configuration
+grafana_domain: grafana.mchegdali.cloud
+prometheus_domain: prometheus.mchegdali.cloud
+alertmanager_domain: alertmanager.mchegdali.cloud
+
+# Prometheus Configuration
+prometheus_version: "v2.55.1"
+prometheus_retention: "7d"
+prometheus_storage_size: "2GB"
+
+# Grafana Configuration  
+grafana_version: "11.6.3"
+grafana_admin_user: "admin"
+grafana_admin_password: "{{ vault_grafana_admin_password | default('admin123') }}"
+
+# Node Exporter Configuration
+node_exporter_version: "v1.9.1"
+
+# cAdvisor Configuration
+cadvisor_version: "v0.52.1"
+
+# AlertManager Configuration
+alertmanager_version: "v0.28.1"
+discord_webhook_url: "{{ vault_discord_webhook_url | default('https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN') }}"

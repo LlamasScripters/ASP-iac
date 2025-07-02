@@ -1,0 +1,178 @@
+---
+- name: Calculate static config file hashes
+  ansible.builtin.set_fact:
+    prometheus_config_hash: "{{ lookup('file', 'prometheus/prometheus.yml') | hash('md5') | truncate(12, True, '') }}"
+    prometheus_alert_rules_hash: "{{ lookup('file', 'prometheus/alert_rules.yml') | hash('md5') | truncate(12, True, '') }}"
+    grafana_datasources_hash: "{{ lookup('file', 'grafana/datasources/prometheus.yml') | hash('md5') | truncate(12, True, '') }}"
+    grafana_dashboards_hash: "{{ lookup('file', 'grafana/dashboards/dashboard.yml') | hash('md5') | truncate(12, True, '') }}"
+
+- name: Set static config names for reuse
+  ansible.builtin.set_fact:
+    prometheus_config_name: "prometheus_config_{{ prometheus_config_hash }}"
+    prometheus_alert_rules_name: "prometheus_alert_rules_{{ prometheus_alert_rules_hash }}"
+    grafana_datasources_name: "grafana_datasources_{{ grafana_datasources_hash }}"
+    grafana_dashboards_name: "grafana_dashboards_{{ grafana_dashboards_hash }}"
+
+- name: Pull Prometheus image
+  community.docker.docker_image_pull:
+    name: "prom/prometheus:{{ prometheus_version }}"
+
+- name: Pull Grafana image
+  community.docker.docker_image_pull:
+    name: "grafana/grafana:{{ grafana_version }}"
+
+- name: Pull Node Exporter image
+  community.docker.docker_image_pull:
+    name: "prom/node-exporter:{{ node_exporter_version }}"
+
+- name: Pull cAdvisor image
+  community.docker.docker_image_pull:
+    name: "gcr.io/cadvisor/cadvisor:{{ cadvisor_version }}"
+
+- name: Pull AlertManager image
+  community.docker.docker_image_pull:
+    name: "prom/alertmanager:{{ alertmanager_version }}"
+
+- name: Create monitoring base directory
+  ansible.builtin.file:
+    path: /app/monitoring
+    state: directory
+    mode: "0755"
+
+- name: Create monitoring config directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /app/monitoring/prometheus
+    - /app/monitoring/grafana/datasources
+    - /app/monitoring/grafana/dashboards
+    - /app/monitoring/alertmanager
+
+- name: Copy Prometheus configuration
+  ansible.builtin.copy:
+    src: prometheus/
+    dest: /app/monitoring/prometheus/
+    mode: "0644"
+  register: prometheus_config_changed
+
+- name: Copy Grafana provisioning configuration
+  ansible.builtin.copy:
+    src: grafana/
+    dest: /app/monitoring/grafana/
+    mode: "0644"
+
+- name: Template AlertManager configuration
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: /app/monitoring/alertmanager/alertmanager.yml
+    mode: "0644"
+  register: alertmanager_config_templated
+
+- name: Calculate AlertManager config hash after templating
+  ansible.builtin.shell: |
+    md5sum /app/monitoring/alertmanager/alertmanager.yml | cut -d' ' -f1 | head -c 12
+  register: alertmanager_config_hash_result
+  changed_when: false
+
+- name: Set AlertManager config name for reuse
+  ansible.builtin.set_fact:
+    alertmanager_config_hash: "{{ alertmanager_config_hash_result.stdout }}"
+    alertmanager_config_name: "alertmanager_config_{{ alertmanager_config_hash_result.stdout }}"
+
+- name: Template monitoring compose file with dynamic config names
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: /app/monitoring/compose.yml
+    mode: "0644"
+
+- name: Create monitoring network
+  community.docker.docker_network:
+    name: monitoring_network
+    driver: overlay
+    scope: swarm
+
+- name: Create Prometheus config Docker Config
+  community.docker.docker_config:
+    name: "{{ prometheus_config_name }}"
+    data_src: /app/monitoring/prometheus/prometheus.yml
+  register: prometheus_config_result
+
+- name: Create Prometheus alert rules Docker Config
+  community.docker.docker_config:
+    name: "{{ prometheus_alert_rules_name }}"
+    data_src: /app/monitoring/prometheus/alert_rules.yml
+  register: prometheus_alert_rules_result
+
+- name: Create AlertManager config Docker Config
+  community.docker.docker_config:
+    name: "{{ alertmanager_config_name }}"
+    data_src: /app/monitoring/alertmanager/alertmanager.yml
+  register: alertmanager_config_result
+
+- name: Create Grafana datasources Docker Config
+  community.docker.docker_config:
+    name: "{{ grafana_datasources_name }}"
+    data_src: /app/monitoring/grafana/datasources/prometheus.yml
+  register: grafana_datasources_result
+
+- name: Create Grafana dashboards Docker Config
+  community.docker.docker_config:
+    name: "{{ grafana_dashboards_name }}"
+    data_src: /app/monitoring/grafana/dashboards/dashboard.yml
+  register: grafana_dashboards_result
+
+- name: Deploy monitoring stack
+  community.docker.docker_stack:
+    name: monitoring
+    state: present
+    detach: true
+    compose: /app/monitoring/compose.yml
+  environment:
+    GRAFANA_DOMAIN: "{{ grafana_domain }}"
+    PROMETHEUS_DOMAIN: "{{ prometheus_domain }}"
+    ALERTMANAGER_DOMAIN: "{{ alertmanager_domain }}"
+    PROMETHEUS_VERSION: "{{ prometheus_version }}"
+    GRAFANA_VERSION: "{{ grafana_version }}"
+    NODE_EXPORTER_VERSION: "{{ node_exporter_version }}"
+    CADVISOR_VERSION: "{{ cadvisor_version }}"
+    ALERTMANAGER_VERSION: "{{ alertmanager_version }}"
+    PROMETHEUS_RETENTION: "{{ prometheus_retention }}"
+    GRAFANA_ADMIN_USER: "{{ grafana_admin_user }}"
+    GRAFANA_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+
+- name: Wait for monitoring stack services to be ready
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      for service in $(docker service ls --filter name=monitoring --format "{{ '{{.Name}}' }}"); do
+        docker service ps "$service" --filter "desired-state=running" --format "{{ '{{.Name}}' }} {{ '{{.CurrentState}}' }}"
+      done | grep -c "Running"
+    executable: /bin/bash
+  register: monitoring_services_running
+  until: monitoring_services_running.stdout | int >= 5
+  retries: 10
+  delay: 5
+  changed_when: false
+
+- name: Verify all monitoring services are running
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      for service in $(docker service ls --filter name=monitoring --format "{{ '{{.Name}}' }}"); do
+        docker service ps "$service" --filter "desired-state=running" --format "{{ '{{.Name}}' }} {{ '{{.CurrentState}}' }}"
+      done
+    executable: /bin/bash
+  register: service_status
+  failed_when: service_status.stdout_lines | select('match', '.*Running.*') | list | length < 5
+  changed_when: false
+
+- name: Display monitoring stack information
+  ansible.builtin.debug:
+    msg:
+      - "Monitoring stack deployed successfully!"
+      - "Grafana: https://{{ grafana_domain }}"
+      - "Prometheus: https://{{ prometheus_domain }}"
+      - "AlertManager: https://{{ alertmanager_domain }}"
+      - "Default Grafana credentials: {{ grafana_admin_user }}/{{ grafana_admin_password }}"

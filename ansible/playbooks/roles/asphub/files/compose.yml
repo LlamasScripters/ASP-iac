@@ -1,0 +1,182 @@
+---
+services:
+  client:
+    image: ${ASPHUB_CLIENT_IMAGE}:${ASPHUB_CLIENT_VERSION}
+    deploy:
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.role == worker
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 30s
+      update_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: rollback
+        monitor: 20s
+        max_failure_ratio: 0
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: "512M"
+        reservations:
+          cpus: "0.25"
+          memory: "256M"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.asphub_client.rule=Host(`${DOMAIN}`) && PathPrefix(`/`)"
+        - "traefik.http.routers.asphub_client.priority=10"
+        - "traefik.http.routers.asphub_client.entrypoints=websecure"
+        - "traefik.http.routers.asphub_client.tls=true"
+        - "traefik.http.routers.asphub_client.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.asphub_client.service=asphub_client"
+        - "traefik.http.services.asphub_client.loadbalancer.server.port=80"
+        - "shepherd.autodeploy=true"
+    networks:
+      - proxy_traefik_proxy
+
+  server:
+    image: ${ASPHUB_SERVER_IMAGE}:${ASPHUB_SERVER_VERSION}
+    secrets:
+      - asphub_env
+    command:
+      - "--env-file=/run/secrets/asphub_env"
+      - "dist/index.js"
+    deploy:
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.role == worker
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 30s
+      update_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: rollback
+        monitor: 20s
+        max_failure_ratio: 0
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: "1024M"
+        reservations:
+          cpus: "0.50"
+          memory: "512M"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.asphub_server.rule=Host(`${DOMAIN}`) && PathPrefix(`/api`)"
+        - "traefik.http.routers.asphub_server.priority=20"
+        - "traefik.http.routers.asphub_server.entrypoints=websecure"
+        - "traefik.http.routers.asphub_server.tls=true"
+        - "traefik.http.routers.asphub_server.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.asphub_server.service=asphub_server"
+        - "traefik.http.services.asphub_server.loadbalancer.server.port=3000"
+        - "shepherd.autodeploy=true"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - postgres
+      - minio
+    networks:
+      - asphub_backend
+      - proxy_traefik_proxy
+
+  minio:
+    image: ${MINIO_IMAGE}:${MINIO_VERSION}
+    volumes:
+      - minio_data:/data/minio
+    command: "minio server /data/minio"
+    secrets:
+      - minio_user
+      - minio_password
+    environment:
+      - MINIO_ROOT_USER_FILE=/run/secrets/minio_user
+      - MINIO_ROOT_PASSWORD_FILE=/run/secrets/minio_password
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - asphub_backend
+    deploy:
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.role == worker
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: "512M"
+        reservations:
+          cpus: "0.25"
+          memory: "256M"
+
+  postgres:
+    image: ${POSTGRES_IMAGE}:${POSTGRES_VERSION}
+    command: "-c config_file=/etc/postgresql.conf"
+    configs:
+      - source: postgres_config
+        target: /etc/postgresql.conf
+    secrets:
+      - postgres_user
+      - postgres_password
+      - postgres_db
+    environment:
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_DB_FILE: /run/secrets/postgres_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - type: tmpfs
+        target: /dev/shm
+        tmpfs:
+          size: 134217728 # 128*2^20 bytes = 128Mb
+    networks:
+      - asphub_backend
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.50"
+          memory: "1024M"
+        limits:
+          cpus: "1.00"
+          memory: "2048M"
+      replicas: 1
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.role == worker
+
+configs:
+  postgres_config:
+    external: true
+
+secrets:
+  postgres_user:
+    external: true
+  postgres_password:
+    external: true
+  postgres_db:
+    external: true
+  minio_user:
+    external: true
+  minio_password:
+    external: true
+  asphub_env:
+    external: true
+
+volumes:
+  postgres_data:
+  minio_data:
+networks:
+  proxy_traefik_proxy:
+    external: true
+  asphub_backend:
+    driver: overlay

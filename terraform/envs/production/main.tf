@@ -9,6 +9,11 @@ terraform {
       source  = "ovh/ovh"
       version = "2.4.0"
     }
+
+    ansible = {
+      source  = "ansible/ansible"
+      version = "1.3.0"
+    }
   }
 
   backend "remote" {
@@ -141,23 +146,86 @@ resource "hcloud_server_network" "worker2_network" {
   ip         = "192.168.0.102"
 }
 
+
+
+#region DNS
+
 data "ovh_domain_zone" "root_zone" {
   name = "mchegdali.cloud"
 }
 
-resource "ovh_domain_zone_record" "asphub_prod_dns" {
-  zone      = data.ovh_domain_zone.root_zone.name
+locals {
+  domain     = data.ovh_domain_zone.root_zone.name
+  subdomains = ["grafana", "traefik", "asphub", "prometheus", "alertmanager"]
+}
+
+
+resource "ovh_domain_zone_record" "primary_dns" {
+  zone      = local.domain
   subdomain = ""
   fieldtype = "A"
   target    = hcloud_server.manager.ipv4_address
 }
 
-resource "ovh_domain_zone_record" "asphub_prod_portainer" {
-  zone      = data.ovh_domain_zone.root_zone.name
-  subdomain = "portainer"
+resource "ovh_domain_zone_record" "subdomains" {
+  zone      = local.domain
+  for_each  = toset(local.subdomains)
+  subdomain = each.value
   fieldtype = "CNAME"
   ttl       = 3600
-  target    = "${data.ovh_domain_zone.root_zone.name}."
+  target    = "${local.domain}."
 
-  depends_on = [ovh_domain_zone_record.asphub_prod_dns]
+  depends_on = [ovh_domain_zone_record.primary_dns]
+}
+
+#endregion DNS
+
+#region Ansible
+
+resource "ansible_group" "managers" {
+  name = "managers"
+
+  variables = {
+    domain = local.domain
+  }
+}
+
+resource "ansible_group" "workers" {
+  name = "workers"
+}
+
+resource "ansible_host" "manager" {
+  name   = hcloud_server.manager.name
+  groups = ["managers"]
+
+  variables = {
+    ansible_user = "asphub"
+    ansible_host = hcloud_server.manager.ipv4_address
+  }
+
+  depends_on = [ansible_group.managers, hcloud_server.manager]
+}
+
+resource "ansible_host" "worker1" {
+  name   = hcloud_server.worker1.name
+  groups = ["workers"]
+
+  variables = {
+    ansible_user = "asphub"
+    ansible_host = hcloud_server.worker1.ipv4_address
+  }
+
+  depends_on = [ansible_group.workers, hcloud_server.worker1]
+}
+
+resource "ansible_host" "worker2" {
+  name   = hcloud_server.worker2.name
+  groups = ["workers"]
+
+  variables = {
+    ansible_user = "asphub"
+    ansible_host = hcloud_server.worker2.ipv4_address
+  }
+
+  depends_on = [ansible_group.workers, hcloud_server.worker2]
 }

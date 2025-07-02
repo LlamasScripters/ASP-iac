@@ -50,10 +50,11 @@ if [ ! -d "$TERRAFORM_DIR" ]; then
 fi
 
 echo "Setting environment variables from Terraform outputs in $TERRAFORM_DIR..."
+terraform_output=$(terraform -chdir=$TERRAFORM_DIR output -json)
 
-export WORKER2_IP=$(terraform -chdir="$TERRAFORM_DIR" output -raw worker2_ip)
-export WORKER1_IP=$(terraform -chdir="$TERRAFORM_DIR" output -raw worker1_ip)
-export MANAGER_IP=$(terraform -chdir="$TERRAFORM_DIR" output -raw manager_ip)
+export MANAGER_IP=$(echo $terraform_output | jq -r '.manager_ip.value')
+export WORKER1_IP=$(echo $terraform_output | jq -r '.worker1_ip.value')
+export WORKER2_IP=$(echo $terraform_output | jq -r '.worker2_ip.value')
 
 echo "Environment variables set."
 

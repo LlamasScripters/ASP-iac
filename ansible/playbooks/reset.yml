@@ -1,0 +1,116 @@
+---
+- name: Reset Docker Swarm services while preserving common setup
+  hosts: managers
+  become: true
+  tasks:
+    - name: Remove Docker stacks
+      community.docker.docker_stack:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - asphub
+        - monitoring
+        - proxy
+      failed_when: false
+      tags: [stacks]
+
+    - name: Wait for stacks to be removed
+      ansible.builtin.pause:
+        seconds: 10
+      tags: [stacks]
+
+    - name: Remove Docker networks (except swarm defaults)
+      community.docker.docker_network:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - asphub_network
+        - monitoring_network
+        - proxy_network
+      failed_when: false
+      tags: [networks]
+
+    - name: Remove Docker configs
+      community.docker.docker_config:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - postgres_config
+        - prometheus_config
+        - grafana_config
+        - alertmanager_config
+        - traefik_config
+      failed_when: false
+      tags: [configs]
+
+    - name: Remove Docker secrets
+      community.docker.docker_secret:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - asphub_env
+        - postgres_password
+        - minio_credentials
+        - grafana_admin
+        - traefik_auth
+      failed_when: false
+      tags: [secrets]
+
+- name: Clean up workers (leave swarm and rejoin)
+  hosts: workers
+  become: true
+  tasks:
+    - name: Leave Docker Swarm
+      community.docker.docker_swarm:
+        state: absent
+        force: true
+      failed_when: false
+      tags: [swarm_reset]
+
+- name: Reset Swarm manager
+  hosts: managers
+  become: true
+  tasks:
+    - name: Leave Docker Swarm (force)
+      community.docker.docker_swarm:
+        state: absent
+        force: true
+      failed_when: false
+      tags: [swarm_reset]
+
+    - name: Prune Docker system (containers, networks, images)
+      community.docker.docker_prune:
+        containers: true
+        networks: true
+        images: true
+        builder_cache: true
+      tags: [cleanup]
+
+    - name: Remove any remaining Docker volumes
+      ansible.builtin.shell: |
+        docker volume ls -q | xargs -r docker volume rm
+      failed_when: false
+      tags: [cleanup]
+
+- name: Verify common setup is preserved
+  hosts: all
+  become: true
+  tasks:
+    - name: Verify Docker is running
+      ansible.builtin.service:
+        name: docker
+        state: started
+      tags: [verify]
+
+    - name: Verify Docker Compose plugin is available
+      ansible.builtin.command: docker compose version
+      register: compose_version
+      changed_when: false
+      tags: [verify]
+
+    - name: Display Docker and Compose versions
+      ansible.builtin.debug:
+        msg: |
+          Docker is running and Compose plugin is available.
+          Compose version: {{ compose_version.stdout }}
+      tags: [verify]

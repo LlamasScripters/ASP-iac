@@ -1,9 +1,0 @@
----
-- name: Setup manager node
-  hosts: manager
-  become: true
-
-  roles:
-    - proxy
-    - shepherd
-    - portainer

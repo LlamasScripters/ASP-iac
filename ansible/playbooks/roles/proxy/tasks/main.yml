@@ -7,20 +7,12 @@
   ansible.builtin.copy:
     src: .
     dest: /app/proxy/
-    mode: '0644'
+    mode: "0644"
 
-- name: Check if proxy network exists
-  community.docker.docker_network_info:
-    name: proxy
-  register: network_info
-
-- name: Create proxy network if not exists
-  community.docker.docker_network:
-    name: proxy
-    driver: overlay
-    scope: swarm
-    state: present
-  when: network_info.network is not defined or network_info.network is none
+- name: Create proxy users secret
+  community.docker.docker_secret:
+    name: proxy_users
+    data: "{{ proxy_credentials }}"
 
 - name: Deploy proxy
   community.docker.docker_stack:
@@ -29,7 +21,5 @@
     detach: true
     compose: /app/proxy/compose.yml
   environment:
-    LETSENCRYPT_EMAIL: '{{ letsencrypt_email }}'
-    DOMAIN: '{{ domain }}'
-    PROXY_USER: '{{ proxy_username }}'
-    PROXY_PASSWORD: '{{ proxy_password }}'
+    LETSENCRYPT_EMAIL: "{{ proxy_letsencrypt_email }}"
+    PROXY_DOMAIN: "{{ proxy_domain }}"

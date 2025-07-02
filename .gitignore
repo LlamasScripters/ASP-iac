@@ -1,8 +1,10 @@
 *.tfvars
 .terraform
 .env
+!.env.j2
+!.env.example
 state.config
 terraform.tfstate*
 tfplan
-ansible/inventory.yml
 .ansible
+.venv

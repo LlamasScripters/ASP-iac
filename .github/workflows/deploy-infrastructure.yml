@@ -158,7 +158,7 @@ jobs:
         run: uv sync
 
       - name: Run Ansible Playbook
-        uses: dawidd6/action-ansible-playbook@93764e7048f4dd16117d134dadb4b36e8ee73227
+        uses: dawidd6/action-ansible-playbook@v4
         with:
           playbook: playbooks/site.yml
           directory: ./ansible

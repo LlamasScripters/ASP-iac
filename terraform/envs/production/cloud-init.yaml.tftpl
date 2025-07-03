@@ -15,6 +15,8 @@ users:
       - gh:iSaaMz
       - gh:MoussaST
       - gh:AriaAman
+    ssh_authorized_keys:
+      - ${ssh_public_key}
     groups: users,sudo, docker
     sudo: ALL=(ALL) NOPASSWD:ALL
 

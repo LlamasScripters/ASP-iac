@@ -60,7 +60,9 @@ resource "hcloud_server" "manager" {
     ignore_changes = [ssh_keys]
   }
 
-  user_data = file("cloud-init.yaml")
+  user_data = templatefile("cloud-init.yaml.tftpl", {
+    ssh_public_key = var.ssh_public_key
+  })
 }
 
 resource "hcloud_server" "worker1" {
@@ -85,7 +87,9 @@ resource "hcloud_server" "worker1" {
     ignore_changes = [ssh_keys]
   }
 
-  user_data = file("cloud-init.yaml")
+  user_data = templatefile("cloud-init.yaml.tftpl", {
+    ssh_public_key = var.ssh_public_key
+  })
 }
 
 resource "hcloud_server" "worker2" {
@@ -110,7 +114,9 @@ resource "hcloud_server" "worker2" {
     ignore_changes = [ssh_keys]
   }
 
-  user_data = file("cloud-init.yaml")
+  user_data = templatefile("cloud-init.yaml.tftpl", {
+    ssh_public_key = var.ssh_public_key
+  })
 }
 
 resource "hcloud_network" "network" {

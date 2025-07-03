@@ -19,7 +19,7 @@ terraform {
   backend "remote" {
     organization = "moustaphachegdali"
     workspaces {
-      name = "projetfinal"
+      name = "asphub-production"
     }
   }
 }
@@ -45,7 +45,7 @@ resource "hcloud_server" "manager" {
   location    = var.location
   labels = {
     "type" = "manager"
-    "env"  = "prod"
+    "env"  = "production"
   }
 
   public_net {
@@ -70,7 +70,7 @@ resource "hcloud_server" "worker1" {
 
   labels = {
     "type" = "worker"
-    "env"  = "prod"
+    "env"  = "production"
   }
 
   public_net {
@@ -95,7 +95,7 @@ resource "hcloud_server" "worker2" {
 
   labels = {
     "type" = "worker"
-    "env"  = "prod"
+    "env"  = "production"
   }
 
   public_net {
@@ -113,10 +113,10 @@ resource "hcloud_server" "worker2" {
 }
 
 resource "hcloud_network" "network" {
-  name     = "net-${var.project_name}"
+  name     = "net-${var.project_name}-prod"
   ip_range = "192.168.0.0/16"
   labels = {
-    "env" = "prod"
+    "env" = "production"
   }
 }
 
@@ -146,8 +146,6 @@ resource "hcloud_server_network" "worker2_network" {
   ip         = "192.168.0.102"
 }
 
-
-
 #region DNS
 
 data "ovh_domain_zone" "root_zone" {
@@ -158,7 +156,6 @@ locals {
   domain     = data.ovh_domain_zone.root_zone.name
   subdomains = ["grafana", "traefik", "asphub", "prometheus", "alertmanager"]
 }
-
 
 resource "ovh_domain_zone_record" "primary_dns" {
   zone      = local.domain

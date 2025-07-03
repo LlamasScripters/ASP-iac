@@ -75,13 +75,21 @@ jobs:
         id: init
         run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} init -no-color
 
+      - name: Setup SSH Key for Terraform
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo $SSH_PRIVATE_KEY > ~/.ssh/id_ed25519
+          echo $(ssh-keygen -f ~/.ssh/id_ed25519 -y) >> ~/.ssh/id_ed25519.pub
+
       - name: Terraform Validate
         id: validate
         run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} validate -no-color
 
       - name: Terraform Plan
         id: plan
-        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} plan -no-color -out=tfplan
+        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} plan -no-color -out=tfplan -var="ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)"
 
       - name: Save Plan
         uses: actions/upload-artifact@v4
@@ -144,30 +152,20 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-          cache-dependency-glob: |
-            "pyproject.toml"
-            "uv.lock"
-            ".python-version"
-
-      - name: Check uv cache hit
-        if: steps.setup-uv.outputs.cache-hit == 'true'
-        run: echo "Cache was restored"
 
       - name: Install Ansible
-        run: |
-          uv sync
+        run: uv sync
 
       - name: Install Ansible Collections
         run: |
-          uv run ansible-galaxy collection install cloud.terraform
+          uv run ansible-galaxy collection install -r ansible/requirements.yml
 
-      - name: Setup SSH for Ansible
+      - name: Setup SSH Key for Ansible
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+          echo $SSH_PRIVATE_KEY > ~/.ssh/id_ed25519
 
       - name: Test Ansible Connection
         run: |

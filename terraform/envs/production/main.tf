@@ -34,8 +34,9 @@ provider "hcloud" {
 provider "ovh" {
 }
 
-data "hcloud_ssh_key" "ssh_key" {
-  name = "ssh-${var.project_name}-prod"
+resource "hcloud_ssh_key" "ssh_key" {
+  name       = "ssh-${var.project_name}-prod"
+  public_key = var.ssh_public_key
 }
 
 resource "hcloud_server" "manager" {
@@ -53,7 +54,7 @@ resource "hcloud_server" "manager" {
     ipv6_enabled = true
   }
 
-  ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
+  ssh_keys = [hcloud_ssh_key.ssh_key.id]
 
   lifecycle {
     ignore_changes = [ssh_keys]
@@ -78,7 +79,7 @@ resource "hcloud_server" "worker1" {
     ipv6_enabled = true
   }
 
-  ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
+  ssh_keys = [hcloud_ssh_key.ssh_key.id]
 
   lifecycle {
     ignore_changes = [ssh_keys]
@@ -103,7 +104,7 @@ resource "hcloud_server" "worker2" {
     ipv6_enabled = true
   }
 
-  ssh_keys = [data.hcloud_ssh_key.ssh_key.id]
+  ssh_keys = [hcloud_ssh_key.ssh_key.id]
 
   lifecycle {
     ignore_changes = [ssh_keys]

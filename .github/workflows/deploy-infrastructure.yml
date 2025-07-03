@@ -113,6 +113,9 @@ jobs:
       OVH_APPLICATION_KEY: ${{ secrets.OVH_APPLICATION_KEY }}
       OVH_APPLICATION_SECRET: ${{ secrets.OVH_APPLICATION_SECRET }}
       OVH_CONSUMER_KEY: ${{ secrets.OVH_CONSUMER_KEY }}
+      ANSIBLE_VAULT_PASS: ${{ secrets.ANSIBLE_VAULT_PASS }}
+      GITHUB_USERNAME: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Token to pull images from ghcr.io
 
     steps:
       - name: Checkout
@@ -135,47 +138,6 @@ jobs:
 
       - name: Terraform Apply
         run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} apply -auto-approve tfplan
-
-      - name: Get Terraform Outputs
-        id: terraform-output
-        run: |
-          echo "manager_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw manager_ip)" >> "$GITHUB_OUTPUT"
-          echo "worker1_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker1_ip)" >> "$GITHUB_OUTPUT"
-          echo "worker2_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker2_ip)" >> "$GITHUB_OUTPUT"
-
-  ansible-deploy:
-    name: "Ansible Deploy"
-    needs: [get-environment, deploy-infrastructure]
-    if: |
-      (
-        github.event_name == 'push' && github.ref == 'refs/heads/main'
-      ) || (
-        github.event_name == 'workflow_dispatch' && github.event.inputs.auto_approve == 'true'
-      )
-    runs-on: ubuntu-latest
-    environment: ${{ needs.get-environment.outputs.environment }}
-    env:
-      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
-      OVH_ENDPOINT: ${{ secrets.OVH_ENDPOINT }}
-      OVH_APPLICATION_KEY: ${{ secrets.OVH_APPLICATION_KEY }}
-      OVH_APPLICATION_SECRET: ${{ secrets.OVH_APPLICATION_SECRET }}
-      OVH_CONSUMER_KEY: ${{ secrets.OVH_CONSUMER_KEY }}
-      ANSIBLE_VAULT_PASS: ${{ secrets.ANSIBLE_VAULT_PASS }}
-      GITHUB_USERNAME: ${{ github.actor }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Token to pull images from ghcr.io
-
-    steps:
-      # Repeat Terraform Init to ensure the state is up-to-date and job is self-contained
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.11.4"
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-      - name: Terraform Init
-        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} init
 
       - name: Install the latest version of uv
         id: setup-uv

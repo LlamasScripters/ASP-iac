@@ -194,16 +194,16 @@ jobs:
         run: |
           uv sync
 
-      - name: Setup SSH key
+      - name: Setup SSH for Ansible
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ needs.deploy-infrastructure.outputs.manager_ip }} >> ~/.ssh/known_hosts
-          ssh-keyscan -H ${{ needs.deploy-infrastructure.outputs.worker1_ip }} >> ~/.ssh/known_hosts
-          ssh-keyscan -H ${{ needs.deploy-infrastructure.outputs.worker2_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan -R ${{ needs.deploy-infrastructure.outputs.manager_ip }}
+          ssh-keyscan -R ${{ needs.deploy-infrastructure.outputs.worker1_ip }}
+          ssh-keyscan -R ${{ needs.deploy-infrastructure.outputs.worker2_ip }}
 
       - name: Test Ansible Connection
         run: |

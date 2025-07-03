@@ -168,6 +168,8 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          touch ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
           manager_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw manager_ip)
           worker1_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker1_ip)
           worker2_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker2_ip)

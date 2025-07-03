@@ -161,19 +161,23 @@ jobs:
         run: |
           uv run ansible-galaxy collection install cloud.terraform
 
-      - name: Setup SSH for Ansible
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          manager_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw manager_ip)
-          worker1_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker1_ip)
-          worker2_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker2_ip)
-          ssh-keyscan $manager_ip >> ~/.ssh/known_hosts
-          ssh-keyscan $worker1_ip >> ~/.ssh/known_hosts
-          ssh-keyscan $worker2_ip >> ~/.ssh/known_hosts
+      - uses: tanmancan/action-setup-ssh-agent-key@1.0.0
+        with:
+          ssh-private-key:
+            ${{ secrets.SSH_PRIVATE_KEY }}
+            # - name: Setup SSH for Ansible
+            #   env:
+            #     SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        # run: |
+        #   mkdir -p ~/.ssh
+        #   echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+        #   chmod 600 ~/.ssh/id_ed25519
+        #   manager_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw manager_ip)
+        #   worker1_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker1_ip)
+        #   worker2_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker2_ip)
+        #   ssh-keyscan $manager_ip >> ~/.ssh/known_hosts
+        #   ssh-keyscan $worker1_ip >> ~/.ssh/known_hosts
+        #   ssh-keyscan $worker2_ip >> ~/.ssh/known_hosts
 
       - name: Test Ansible Connection
         run: |

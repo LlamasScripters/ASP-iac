@@ -156,7 +156,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           # inventory: inventory.yml
           requirements: requirements.yml
-          # vault_password: ${{ secrets.ANSIBLE_VAULT_PASS }}
+          vault_password: ${{ secrets.ANSIBLE_VAULT_PASS }}
           options: |
             --become
             --verbose

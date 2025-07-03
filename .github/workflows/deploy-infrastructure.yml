@@ -95,8 +95,8 @@ jobs:
           HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
         run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} show -no-color tfplan
 
-  terraform-apply:
-    name: "Terraform Apply"
+  deploy-infrastructure:
+    name: "Deploy Infrastructure"
     needs: [get-environment, terraform-plan]
     if: |
       (
@@ -106,10 +106,6 @@ jobs:
       )
     runs-on: ubuntu-latest
     environment: ${{ needs.get-environment.outputs.environment }}
-    outputs:
-      manager_ip: ${{ steps.terraform-output.outputs.manager_ip }}
-      worker1_ip: ${{ steps.terraform-output.outputs.worker1_ip }}
-      worker2_ip: ${{ steps.terraform-output.outputs.worker2_ip }}
     env:
       HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
       OVH_ENDPOINT: ${{ secrets.OVH_ENDPOINT }}
@@ -148,7 +144,7 @@ jobs:
 
   ansible-deploy:
     name: "Ansible Deploy"
-    needs: [get-environment, terraform-apply]
+    needs: [get-environment, deploy-infrastructure]
     if: |
       (
         github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -158,13 +154,27 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ needs.get-environment.outputs.environment }}
     env:
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      OVH_ENDPOINT: ${{ secrets.OVH_ENDPOINT }}
+      OVH_APPLICATION_KEY: ${{ secrets.OVH_APPLICATION_KEY }}
+      OVH_APPLICATION_SECRET: ${{ secrets.OVH_APPLICATION_SECRET }}
+      OVH_CONSUMER_KEY: ${{ secrets.OVH_CONSUMER_KEY }}
       ANSIBLE_VAULT_PASS: ${{ secrets.ANSIBLE_VAULT_PASS }}
       GITHUB_USERNAME: ${{ github.actor }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Token to pull images from ghcr.io
 
     steps:
+      # Repeat Terraform Init to ensure the state is up-to-date and job is self-contained
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.4"
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: Terraform Init
+        run: terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} init
 
       - name: Install the latest version of uv
         id: setup-uv
@@ -191,9 +201,9 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ needs.terraform-apply.outputs.manager_ip }} >> ~/.ssh/known_hosts
-          ssh-keyscan -H ${{ needs.terraform-apply.outputs.worker1_ip }} >> ~/.ssh/known_hosts
-          ssh-keyscan -H ${{ needs.terraform-apply.outputs.worker2_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ needs.deploy-infrastructure.outputs.manager_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ needs.deploy-infrastructure.outputs.worker1_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ needs.deploy-infrastructure.outputs.worker2_ip }} >> ~/.ssh/known_hosts
 
       - name: Test Ansible Connection
         run: |

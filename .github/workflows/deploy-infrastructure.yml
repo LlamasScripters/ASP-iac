@@ -166,13 +166,11 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo $SSH_PRIVATE_KEY >> ~/.ssh/id_ed25519
+          echo "$SSH_PRIVATE_KEY" >> ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
 
       - name: Test Ansible Connection
-        run: |
-          ls -la ~/.ssh/id_ed25519 &&
-          ansible all -m ping -i inventory.yml
+        run: ansible all -m ping -i inventory.yml
         working-directory: ./ansible
 
       - name: Run Ansible Playbook

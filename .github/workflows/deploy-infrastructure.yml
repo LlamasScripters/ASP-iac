@@ -201,9 +201,9 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -R ${{ needs.deploy-infrastructure.outputs.manager_ip }}
-          ssh-keyscan -R ${{ needs.deploy-infrastructure.outputs.worker1_ip }}
-          ssh-keyscan -R ${{ needs.deploy-infrastructure.outputs.worker2_ip }}
+          ssh-keyscan ${{ needs.deploy-infrastructure.outputs.manager_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan ${{ needs.deploy-infrastructure.outputs.worker1_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan ${{ needs.deploy-infrastructure.outputs.worker2_ip }} >> ~/.ssh/known_hosts
 
       - name: Test Ansible Connection
         run: |

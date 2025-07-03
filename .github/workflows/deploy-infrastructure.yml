@@ -168,38 +168,13 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          touch ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-          
-          # Debug SSH key
-          echo "SSH key file created with permissions:"
-          ls -la ~/.ssh/id_ed25519
-          
-          # Get server IPs
-          manager_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw manager_ip)
-          worker1_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker1_ip)
-          worker2_ip=$(terraform -chdir=./terraform/envs/${{ needs.get-environment.outputs.environment }} output -raw worker2_ip)
-          
-          echo "Server IPs:"
-          echo "  Manager: $manager_ip"
-          echo "  Worker1: $worker1_ip"
-          echo "  Worker2: $worker2_ip"
-          
-          # Add host keys
-          echo "Adding SSH host keys..."
-          ssh-keygen -R $manager_ip && ssh-keyscan -H $manager_ip >> ~/.ssh/known_hosts
-          ssh-keygen -R $worker1_ip && ssh-keyscan -H $worker1_ip >> ~/.ssh/known_hosts
-          ssh-keygen -R $worker2_ip && ssh-keyscan -H $worker2_ip >> ~/.ssh/known_hosts
-          
-          echo "Known hosts file updated:"
-          cat ~/.ssh/known_hosts
 
       - name: Test Ansible Connection
         run: |
-          cd ansible
+          ls -la ~/.ssh/id_ed25519 &&
           ansible all -m ping -i inventory.yml
+        working-directory: ./ansible
 
       - name: Run Ansible Playbook
-        run: |
-          cd ansible
-          ansible-playbook -i inventory.yml playbooks/site.yml
+        run: ansible-playbook -i inventory.yml playbooks/site.yml
+        working-directory: ./ansible

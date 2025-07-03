@@ -1,14 +1,14 @@
-name: 'Terraform Deploy'
+name: "Deploy Infrastructure"
 
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to deploy to'
+        description: "Environment to deploy to"
         required: true
         type: environment
       auto_approve:
-        description: 'Auto approve the plan'
+        description: "Auto approve the plan"
         required: true
         default: false
         type: boolean
@@ -18,92 +18,172 @@ permissions:
   pull-requests: write
 
 jobs:
-  terraform:
-    name: 'Terraform'
+  get-environment:
+    name: "Get Environment"
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
+    outputs:
+      environment: ${{ steps.get-environment.outputs.ENVIRONMENT }}
+    steps:
+      - name: Get Environment
+        id: get-environment
+        run: |
+          ENVIRONMENT=${{ github.event.inputs.environment }}
+          ENVIRONMENT=${ENVIRONMENT@L}
+          echo "ENVIRONMENT=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
+
+  terraform-plan:
+    name: "Terraform Plan"
+    runs-on: ubuntu-latest
+    needs: get-environment
+    environment: ${{ needs.get-environment.outputs.environment }}
+    env:
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      OVH_ENDPOINT: ${{ secrets.OVH_ENDPOINT }}
+      OVH_APPLICATION_KEY: ${{ secrets.OVH_APPLICATION_KEY }}
+      OVH_APPLICATION_SECRET: ${{ secrets.OVH_APPLICATION_SECRET }}
+      OVH_CONSUMER_KEY: ${{ secrets.OVH_CONSUMER_KEY }}
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: "1.11.4"
-        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.4"
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
-    - name: Terraform Format
-      id: fmt
-      run: terraform fmt -check
-      continue-on-error: true
+      - name: Terraform Format
+        id: fmt
+        run: terraform fmt -check
 
-    - name: Terraform Init
-      id: init
-      env:
-        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
-      run: terraform init
-      working-directory: ./terraform/envs/prod
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
 
-    - name: Terraform Validate
-      id: validate
-      env:
-        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
-      run: terraform validate
-      working-directory: ./terraform/envs/prod
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
 
-    - name: Terraform Plan
-      id: plan
-      env:
-        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
-      run: terraform plan -no-color -out=tfplan
-      working-directory: ./terraform/envs/prod
-      continue-on-error: true
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -out=tfplan
+        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
 
-    - name: Save Plan
-      uses: actions/upload-artifact@v4
-      with:
-        name: tfplan
-        path: ./terraform/envs/prod/tfplan
-        retention-days: 1
+      - name: Save Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ needs.get-environment.outputs.environment }}
+          path: ./terraform/envs/${{ needs.get-environment.outputs.environment }}/tfplan
+          retention-days: 1
 
-    - name: Show Plan
-      env:
-        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
-      run: terraform show -no-color tfplan
-      working-directory: ./terraform/envs/prod
+      - name: Show Plan
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: terraform show -no-color tfplan
+        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
 
-  apply:
-    name: 'Apply'
-    needs: terraform
+  terraform-apply:
+    name: "Terraform Apply"
+    needs: [get-environment, terraform-plan]
     if: github.event.inputs.auto_approve == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
+    environment: ${{ needs.get-environment.outputs.environment }}
+    outputs:
+      manager_ip: ${{ steps.terraform-output.outputs.manager_ip }}
+      worker1_ip: ${{ steps.terraform-output.outputs.worker1_ip }}
+      worker2_ip: ${{ steps.terraform-output.outputs.worker2_ip }}
+    env:
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      OVH_ENDPOINT: ${{ secrets.OVH_ENDPOINT }}
+      OVH_APPLICATION_KEY: ${{ secrets.OVH_APPLICATION_KEY }}
+      OVH_APPLICATION_SECRET: ${{ secrets.OVH_APPLICATION_SECRET }}
+      OVH_CONSUMER_KEY: ${{ secrets.OVH_CONSUMER_KEY }}
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: "1.11.4"
-        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.4"
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
-    - name: Download Plan
-      uses: actions/download-artifact@v4
-      with:
-        name: tfplan
-        path: ./terraform/envs/prod
+      - name: Download Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ needs.get-environment.outputs.environment }}
+          path: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
 
-    - name: Terraform Init
-      env:
-        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
-      run: terraform init
-      working-directory: ./terraform/envs/prod
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
 
-    - name: Terraform Apply
-      env:
-        HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
-      run: terraform apply -auto-approve tfplan
-      working-directory: ./terraform/envs/prod 
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
+
+      - name: Get Terraform Outputs
+        id: terraform-output
+        run: |
+          echo "manager_ip=$(terraform output -raw manager_ip)" >> "$GITHUB_OUTPUT"
+          echo "worker1_ip=$(terraform output -raw worker1_ip)" >> "$GITHUB_OUTPUT"
+          echo "worker2_ip=$(terraform output -raw worker2_ip)" >> "$GITHUB_OUTPUT"
+        working-directory: ./terraform/envs/${{ needs.get-environment.outputs.environment }}
+
+  ansible-deploy:
+    name: "Ansible Deploy"
+    needs: [get-environment, terraform-apply]
+    if: github.event.inputs.auto_approve == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.get-environment.outputs.environment }}
+    env:
+      MANAGER_IP: ${{ needs.terraform-apply.outputs.manager_ip }}
+      WORKER1_IP: ${{ needs.terraform-apply.outputs.worker1_ip }}
+      WORKER2_IP: ${{ needs.terraform-apply.outputs.worker2_ip }}
+      ANSIBLE_VAULT_PASS: ${{ secrets.ANSIBLE_VAULT_PASS }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ needs.terraform-apply.outputs.manager_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ needs.terraform-apply.outputs.worker1_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ needs.terraform-apply.outputs.worker2_ip }} >> ~/.ssh/known_hosts
+
+      - name: Generate Ansible Inventory
+        run: |
+          cd ansible
+          echo "# Generated inventory file, do not edit this file" > ./inventory.yml
+          envsubst < ./templates/inventory_template.yml >> ./inventory.yml
+          cat ./inventory.yml
+
+      - name: Test Ansible Connection
+        run: |
+          cd ansible
+          ansible all -m ping -i inventory.yml
+
+      - name: Run Ansible Playbook
+        run: |
+          cd ansible
+          ansible-playbook -i inventory.yml playbooks/site.yml

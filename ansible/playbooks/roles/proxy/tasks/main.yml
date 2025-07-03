@@ -1,0 +1,25 @@
+---
+- name: Pull proxy image
+  community.docker.docker_image_pull:
+    name: traefik:v3.4
+
+- name: Copy proxy files
+  ansible.builtin.copy:
+    src: .
+    dest: /app/proxy/
+    mode: "0644"
+
+- name: Create proxy users secret
+  community.docker.docker_secret:
+    name: proxy_users
+    data: "{{ proxy_credentials }}"
+
+- name: Deploy proxy
+  community.docker.docker_stack:
+    name: proxy
+    state: present
+    detach: true
+    compose: /app/proxy/compose.yml
+  environment:
+    LETSENCRYPT_EMAIL: "{{ proxy_letsencrypt_email }}"
+    PROXY_DOMAIN: "{{ proxy_domain }}"

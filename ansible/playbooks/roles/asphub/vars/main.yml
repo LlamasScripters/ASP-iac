@@ -1,0 +1,34 @@
+---
+# ASPHub Application Versions
+asphub_client_version: "latest"
+asphub_server_version: "latest"
+asphub_postgres_version: "17.5-alpine"
+minio_version: "RELEASE.2025-05-24T17-08-30Z"
+
+# Container Images
+asphub_client_image: "ghcr.io/llamasscripters/asphub-client"
+asphub_server_image: "ghcr.io/llamasscripters/asphub-server"
+postgres_image: "postgres"
+minio_image: "minio/minio"
+
+asphub_env_vars:
+  BETTER_AUTH_SECRET: "{{ vault_asphub_auth_secret }}"
+  BETTER_AUTH_URL: "https://{{ domain }}"
+  GOOGLE_CLIENT_ID: 423521679874-dnns973ldeadd94r61p0l2ha1k2pj1bn.apps.googleusercontent.com
+  GOOGLE_CLIENT_SECRET: "{{ vault_google_client_secret }}"
+  BREVO_API_KEY: "{{ vault_brevo_api_key }}"
+  S3_ACCESS_KEY_ID: "{{ vault_s3_access_key_id }}"
+  S3_SECRET_ACCESS_KEY: "{{ vault_s3_secret_access_key }}"
+  S3_REGION: eu-west-1
+  S3_BUCKET: asphub
+  S3_ENDPOINT: http://minio:9000
+  DATABASE_URL: "postgresql://postgres:{{ vault_postgres_password }}@postgres:5432/asphub"
+
+asphub_db_vars:
+  POSTGRES_USER: postgres
+  POSTGRES_DB: asphub
+  POSTGRES_PASSWORD: "{{ vault_postgres_password }}"
+
+asphub_minio_vars:
+  MINIO_ROOT_USER: "{{ vault_minio_root_user }}"
+  MINIO_ROOT_PASSWORD: "{{ vault_minio_root_password }}"

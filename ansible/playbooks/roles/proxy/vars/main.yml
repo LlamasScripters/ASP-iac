@@ -1,0 +1,4 @@
+---
+proxy_credentials: "{{ vault_proxy_credentials }}"
+proxy_domain: traefik.mchegdali.cloud
+proxy_letsencrypt_email: moustapha.chegdali@gmail.com

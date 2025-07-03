@@ -1,0 +1,205 @@
+---
+- name: Show domain name
+  ansible.builtin.debug:
+    msg: "{{ domain }}"
+  failed_when: domain is not defined
+
+- name: Check github username
+  ansible.builtin.debug:
+    msg: "✅ Github Username: {{ lookup('ansible.builtin.env', 'GITHUB_USERNAME') }}"
+  failed_when: lookup('ansible.builtin.env', 'GITHUB_USERNAME') is not defined
+
+- name: Check github token
+  ansible.builtin.debug:
+    msg: "✅ Github Token"
+  failed_when: lookup('ansible.builtin.env', 'GITHUB_TOKEN') is not defined
+
+- name: Login to ghcr.io
+  community.docker.docker_login:
+    username: "{{ lookup('ansible.builtin.env', 'GITHUB_USERNAME') }}"
+    password: "{{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
+    registry_url: ghcr.io
+    reauth: true
+  failed_when: lookup('ansible.builtin.env', 'GITHUB_USERNAME') is not defined or lookup('ansible.builtin.env', 'GITHUB_TOKEN') is not defined
+
+- name: Pull frontend image
+  community.docker.docker_image_pull:
+    name: "{{ asphub_client_image }}"
+    tag: "{{ asphub_client_version }}"
+
+- name: Pull backend image
+  community.docker.docker_image_pull:
+    name: "{{ asphub_server_image }}"
+    tag: "{{ asphub_server_version }}"
+
+- name: Pull PostgreSQL image
+  community.docker.docker_image_pull:
+    name: "{{ postgres_image }}"
+    tag: "{{ asphub_postgres_version }}"
+
+- name: Pull MinIO image
+  community.docker.docker_image_pull:
+    name: "{{ minio_image }}"
+    tag: "{{ minio_version }}"
+
+- name: Copy asphub files
+  ansible.builtin.copy:
+    src: .
+    dest: /app/asphub/
+    mode: "0644"
+
+- name: Create postgres volume
+  community.docker.docker_volume:
+    name: postgres_data
+    state: present
+
+- name: Delete existing minio Docker service
+  community.docker.docker_swarm_service:
+    name: minio
+    state: absent
+
+- name: Delete existing asphub Docker stack
+  community.docker.docker_stack:
+    name: asphub
+    state: absent
+
+- name: Create database config Docker Config
+  community.docker.docker_config:
+    name: postgres_config
+    data_src: /app/asphub/postgresql.conf
+
+- name: Create database user Docker Secret
+  community.docker.docker_secret:
+    name: postgres_user
+    data: "{{ asphub_db_vars.POSTGRES_USER }}"
+
+- name: Create database password Docker Secret
+  community.docker.docker_secret:
+    name: postgres_password
+    data: "{{ asphub_db_vars.POSTGRES_PASSWORD }}"
+
+- name: Create database name Docker Secret
+  community.docker.docker_secret:
+    name: postgres_db
+    data: "{{ asphub_db_vars.POSTGRES_DB }}"
+
+- name: Create minio user Docker Secret
+  community.docker.docker_secret:
+    name: minio_user
+    data: "{{ asphub_minio_vars.MINIO_ROOT_USER }}"
+
+- name: Create minio password Docker Secret
+  community.docker.docker_secret:
+    name: minio_password
+    data: "{{ asphub_minio_vars.MINIO_ROOT_PASSWORD }}"
+
+- name: Create .env from env vars
+  ansible.builtin.template:
+    src: .env.j2
+    dest: /app/asphub/.env
+    mode: "0644"
+
+- name: Create .env hash
+  ansible.builtin.set_fact:
+    asphub_env_hash: "{{ asphub_env_vars | hash('sha256') }}"
+
+- name: Create asphub env Docker Secret
+  community.docker.docker_secret:
+    name: asphub_env
+    data_src: /app/asphub/.env
+    labels:
+      ansible_key: "{{ asphub_env_hash }}"
+
+- name: Deploy asphub
+  community.docker.docker_stack:
+    name: asphub
+    state: present
+    detach: true
+    compose: /app/asphub/compose.yml
+    with_registry_auth: true
+  environment:
+    DOMAIN: "{{ domain }}"
+    ASPHUB_CLIENT_IMAGE: "{{ asphub_client_image }}"
+    ASPHUB_CLIENT_VERSION: "{{ asphub_client_version }}"
+    ASPHUB_SERVER_IMAGE: "{{ asphub_server_image }}"
+    ASPHUB_SERVER_VERSION: "{{ asphub_server_version }}"
+    POSTGRES_IMAGE: "{{ postgres_image }}"
+    POSTGRES_VERSION: "{{ asphub_postgres_version }}"
+    MINIO_IMAGE: "{{ minio_image }}"
+    MINIO_VERSION: "{{ minio_version }}"
+
+- name: Wait for asphub stack services to be ready
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      docker service ls --filter name=asphub --format "table {{ '{{.Name}}' }}\t{{ '{{.Replicas}}' }}\t{{ '{{.Mode}}' }}" | grep -v "0/"
+    executable: /bin/bash
+  register: asphub_services
+  until: asphub_services.stdout_lines | length >= 4
+  retries: 5
+  delay: 3
+  changed_when: false
+
+- name: Verify all asphub services are converged
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      docker service ls --filter name=asphub --format "{{ '{{.Name}}' }} {{ '{{.Replicas}}' }}" | grep -v "0/"
+    executable: /bin/bash
+  register: asphub_service_status
+  failed_when: asphub_service_status.stdout_lines | length < 4
+  changed_when: false
+
+- name: Find node with asphub server container
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      docker service ps asphub_server --format {{ '{{.Node}}' }} --filter "desired-state=running" | head -1
+    executable: /bin/bash
+  retries: 3
+  delay: 5
+  until: server_node_result.rc == 0
+  register: server_node_result
+  changed_when: true
+
+- name: Show server node result
+  ansible.builtin.debug:
+    msg: "Server node result: {{ server_node_result }}"
+
+- name: Set server node fact
+  ansible.builtin.set_fact:
+    server_node: "{{ server_node_result.stdout.strip() }}"
+
+- name: Show server node
+  ansible.builtin.debug:
+    msg: "AspHub server is running on node: {{ server_node }}"
+
+- name: Execute database migration on correct node
+  ansible.builtin.shell: |
+    docker exec $(docker ps -q -f name=asphub_server) node --env-file=/run/secrets/asphub_env dist/bin/migrate.js
+  register: migration_result
+  delegate_to: "{{ server_node }}"
+  changed_when: true
+
+- name: Show migration result
+  ansible.builtin.debug:
+    msg: |
+      {% if migration_result.rc == 0 %}
+      ✅ Database migration completed successfully
+      {% if migration_result.stdout %}
+      Output: {{ migration_result.stdout }}
+      {% endif %}
+      {% else %}
+      ❌ Database migration failed (exit code: {{ migration_result.rc }})
+      {% if migration_result.stdout %}
+      Output: {{ migration_result.stdout }}
+      {% endif %}
+      {% if migration_result.stderr %}
+      Error: {{ migration_result.stderr }}
+      {% endif %}
+      {% endif %}
+
+- name: Fail if migration failed
+  ansible.builtin.fail:
+    msg: "Database migration failed with exit code {{ migration_result.rc }}"
+  when: migration_result.rc != 0

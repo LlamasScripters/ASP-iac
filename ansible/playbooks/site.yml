@@ -1,0 +1,57 @@
+---
+- name: Setup servers
+  tags: common
+  hosts: all
+  become: true
+  roles:
+    - common
+
+- name: Setup swarm cluster
+  tags: swarm
+  hosts: managers
+  become: true
+  tasks:
+    - name: Initialize Swarm cluster
+      community.docker.docker_swarm:
+        state: present
+        advertise_addr: 192.168.0.100
+      register: swarm_manager
+    - name: Share swarm token to workers
+      ansible.builtin.add_host:
+        name: swarm_token_worker_holder
+        groups:
+          - swarm_token_holders
+        swarm_token_worker: "{{ swarm_manager.swarm_facts.JoinTokens.Worker }}"
+
+- name: Join workers to the cluster
+  tags: swarm
+  hosts: workers
+  become: true
+  tasks:
+    - name: Join cluster
+      community.docker.docker_swarm:
+        state: join
+        join_token: "{{ hostvars['swarm_token_worker_holder']['swarm_token_worker'] }}"
+        remote_addrs:
+          - "192.168.0.100:2377"
+
+- name: Setup proxy on manager node
+  tags: proxy
+  hosts: managers
+  become: true
+  roles:
+    - proxy
+
+- name: Setup monitoring stack on manager node
+  tags: monitoring
+  hosts: managers
+  become: true
+  roles:
+    - monitoring
+
+- name: Setup asphub
+  tags: asphub
+  hosts: managers
+  become: true
+  roles:
+    - asphub

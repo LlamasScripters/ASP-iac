@@ -1,0 +1,24 @@
+#cloud-config
+
+package_update: true
+package_upgrade: true
+
+keyboard:
+  layout: us
+
+timezone: Europe/Paris
+
+users:
+  - name: asphub
+    ssh_import_id:
+      - gh:mchegdali
+      - gh:iSaaMz
+      - gh:MoussaST
+      - gh:AriaAman
+    groups: users,sudo, docker
+    sudo: ALL=(ALL) NOPASSWD:ALL
+
+allow_public_ssh_keys: true
+ssh_pwauth: false
+disable_root: true
+disable_root_opts: no-port-forwarding,no-agent-forwarding,no-X11-forwarding

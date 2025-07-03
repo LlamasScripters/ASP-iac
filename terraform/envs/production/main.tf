@@ -4,6 +4,16 @@ terraform {
       source  = "hetznercloud/hcloud"
       version = "1.50.0"
     }
+
+    ovh = {
+      source  = "ovh/ovh"
+      version = "2.4.0"
+    }
+
+    ansible = {
+      source  = "ansible/ansible"
+      version = "1.3.0"
+    }
   }
 
   backend "remote" {
@@ -14,7 +24,14 @@ terraform {
   }
 }
 
+locals {
+  image = "ubuntu-24.04"
+}
+
 provider "hcloud" {
+}
+
+provider "ovh" {
 }
 
 data "hcloud_ssh_key" "ssh_key" {
@@ -23,7 +40,7 @@ data "hcloud_ssh_key" "ssh_key" {
 
 resource "hcloud_server" "manager" {
   name        = "srv-${var.project_name}-manager-prod"
-  image       = "debian-12"
+  image       = local.image
   server_type = var.server_type
   location    = var.location
   labels = {
@@ -47,7 +64,7 @@ resource "hcloud_server" "manager" {
 
 resource "hcloud_server" "worker1" {
   name        = "srv-${var.project_name}-worker1-prod"
-  image       = "debian-12"
+  image       = local.image
   server_type = var.server_type
   location    = var.location
 
@@ -72,7 +89,7 @@ resource "hcloud_server" "worker1" {
 
 resource "hcloud_server" "worker2" {
   name        = "srv-${var.project_name}-worker2-prod"
-  image       = "debian-12"
+  image       = local.image
   server_type = var.server_type
   location    = var.location
 
@@ -97,7 +114,7 @@ resource "hcloud_server" "worker2" {
 
 resource "hcloud_network" "network" {
   name     = "net-${var.project_name}"
-  ip_range = "10.0.0.0/16"
+  ip_range = "192.168.0.0/16"
   labels = {
     "env" = "prod"
   }
@@ -108,23 +125,107 @@ resource "hcloud_network_subnet" "subnet" {
   type         = "cloud"
   network_zone = "eu-central"
 
-  ip_range = "10.0.0.0/24"
+  ip_range = "192.168.0.0/24"
 }
 
 resource "hcloud_server_network" "manager_network" {
   server_id  = hcloud_server.manager.id
   network_id = hcloud_network.network.id
-  ip         = "10.0.0.10"
+  ip         = "192.168.0.100"
 }
 
 resource "hcloud_server_network" "worker1_network" {
   server_id  = hcloud_server.worker1.id
   network_id = hcloud_network.network.id
-  ip         = "10.0.0.11"
+  ip         = "192.168.0.101"
 }
 
 resource "hcloud_server_network" "worker2_network" {
   server_id  = hcloud_server.worker2.id
   network_id = hcloud_network.network.id
-  ip         = "10.0.0.12"
+  ip         = "192.168.0.102"
+}
+
+
+
+#region DNS
+
+data "ovh_domain_zone" "root_zone" {
+  name = "mchegdali.cloud"
+}
+
+locals {
+  domain     = data.ovh_domain_zone.root_zone.name
+  subdomains = ["grafana", "traefik", "asphub", "prometheus", "alertmanager"]
+}
+
+
+resource "ovh_domain_zone_record" "primary_dns" {
+  zone      = local.domain
+  subdomain = ""
+  fieldtype = "A"
+  target    = hcloud_server.manager.ipv4_address
+}
+
+resource "ovh_domain_zone_record" "subdomains" {
+  zone      = local.domain
+  for_each  = toset(local.subdomains)
+  subdomain = each.value
+  fieldtype = "CNAME"
+  ttl       = 3600
+  target    = "${local.domain}."
+
+  depends_on = [ovh_domain_zone_record.primary_dns]
+}
+
+#endregion DNS
+
+#region Ansible
+
+resource "ansible_group" "managers" {
+  name = "managers"
+
+  variables = {
+    domain = local.domain
+  }
+}
+
+resource "ansible_group" "workers" {
+  name = "workers"
+}
+
+resource "ansible_host" "manager" {
+  name   = hcloud_server.manager.name
+  groups = ["managers"]
+
+  variables = {
+    ansible_user = "asphub"
+    ansible_host = hcloud_server.manager.ipv4_address
+  }
+
+  depends_on = [ansible_group.managers, hcloud_server.manager]
+}
+
+resource "ansible_host" "worker1" {
+  name   = hcloud_server.worker1.name
+  groups = ["workers"]
+
+  variables = {
+    ansible_user = "asphub"
+    ansible_host = hcloud_server.worker1.ipv4_address
+  }
+
+  depends_on = [ansible_group.workers, hcloud_server.worker1]
+}
+
+resource "ansible_host" "worker2" {
+  name   = hcloud_server.worker2.name
+  groups = ["workers"]
+
+  variables = {
+    ansible_user = "asphub"
+    ansible_host = hcloud_server.worker2.ipv4_address
+  }
+
+  depends_on = [ansible_group.workers, hcloud_server.worker2]
 }

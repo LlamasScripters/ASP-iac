@@ -157,15 +157,34 @@ jobs:
       - name: Install Ansible
         run: uv sync
 
+      - name: Install Ansible Collections
+        run: |
+          uv run ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Setup SSH Key for Ansible
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          eval $(ssh-agent -s)
+          ssh-add ~/.ssh/id_ed25519
+          # terraform_output=$(terraform -chdir=terraform/envs/production output -json)
+          # manager_ip=$(echo $terraform_output | jq -r '.manager_ip.value')
+          # worker1_ip=$(echo $terraform_output | jq -r '.worker1_ip.value')
+          # worker2_ip=$(echo $terraform_output | jq -r '.worker2_ip.value')
+          # echo "Adding manager IP $manager_ip to known_hosts"
+          # ssh-keyscan -H $manager_ip >> ~/.ssh/known_hosts
+          # echo "Adding SSH key to known_hosts for $worker1_ip"
+          # ssh-keyscan -H $worker1_ip >> ~/.ssh/known_hosts
+          # echo "Adding SSH key to known_hosts for $worker2_ip"
+          # ssh-keyscan -H $worker2_ip >> ~/.ssh/known_hosts
+
+      - name: Test Ansible Connection
+        run: ansible all -m ping -i inventory.yml
+        working-directory: ./ansible
+
       - name: Run Ansible Playbook
-        uses: dawidd6/action-ansible-playbook@v4
-        with:
-          playbook: playbooks/site.yml
-          directory: ./ansible
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # inventory: inventory.yml
-          requirements: requirements.yml
-          vault_password: ${{ secrets.ANSIBLE_VAULT_PASS }}
-          options: |
-            --become
-            --verbose
+        run: ansible-playbook -i inventory.yml playbooks/site.yml
+        working-directory: ./ansible

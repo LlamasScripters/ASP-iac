@@ -34,13 +34,13 @@
 
 - name: Pull PostgreSQL image
   community.docker.docker_image_pull:
-    name: "{{ postgres_image }}"
+    name: "{{ asphub_postgres_image }}"
     tag: "{{ asphub_postgres_version }}"
 
 - name: Pull MinIO image
   community.docker.docker_image_pull:
-    name: "{{ minio_image }}"
-    tag: "{{ minio_version }}"
+    name: "{{ asphub_minio_image }}"
+    tag: "{{ asphub_minio_version }}"
 
 - name: Copy asphub files
   ansible.builtin.copy:
@@ -123,10 +123,10 @@
     ASPHUB_CLIENT_VERSION: "{{ asphub_client_version }}"
     ASPHUB_SERVER_IMAGE: "{{ asphub_server_image }}"
     ASPHUB_SERVER_VERSION: "{{ asphub_server_version }}"
-    POSTGRES_IMAGE: "{{ postgres_image }}"
+    POSTGRES_IMAGE: "{{ asphub_postgres_image }}"
     POSTGRES_VERSION: "{{ asphub_postgres_version }}"
-    MINIO_IMAGE: "{{ minio_image }}"
-    MINIO_VERSION: "{{ minio_version }}"
+    MINIO_IMAGE: "{{ asphub_minio_image }}"
+    MINIO_VERSION: "{{ asphub_minio_version }}"
 
 - name: Wait for asphub stack services to be ready
   ansible.builtin.shell:

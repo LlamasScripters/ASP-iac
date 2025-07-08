@@ -22,6 +22,21 @@ scrape_configs:
           - 'tasks.node-exporter'
         type: 'A'
         port: 9100
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '([^:]+):\d+'
+        target_label: __address__
+        replacement: '${1}:9100'
+      - source_labels: [__meta_dns_name]
+        regex: 'tasks\.(.+)'
+        target_label: service_name
+        replacement: '${1}'
+      - target_label: cluster
+        replacement: 'docker-swarm'
+      - source_labels: [__address__]
+        regex: '(.+):.*'
+        target_label: node_id
+        replacement: '${1}'
 
   - job_name: 'cadvisor'
     dns_sd_configs:
@@ -29,7 +44,39 @@ scrape_configs:
           - 'tasks.cadvisor'
         type: 'A'
         port: 8080
-    scrape_interval: 120s
+    scrape_interval: 30s
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '([^:]+):\d+'
+        target_label: __address__
+        replacement: '${1}:8080'
+      - source_labels: [__meta_dns_name]
+        regex: 'tasks\.(.+)'
+        target_label: service_name
+        replacement: '${1}'
+      - target_label: cluster
+        replacement: 'docker-swarm'
+      - source_labels: [__address__]
+        regex: '(.+):.*'
+        target_label: node_id
+        replacement: '${1}'
+    metric_relabel_configs:
+      - source_labels: [container_label_com_docker_swarm_service_name]
+        regex: '(.+)'
+        target_label: service_name
+        replacement: '${1}'
+      - source_labels: [container_label_com_docker_swarm_task_name]
+        regex: '(.+)'
+        target_label: task_name
+        replacement: '${1}'
+      - source_labels: [name]
+        regex: '/docker/([a-f0-9]{12})[a-f0-9]*'
+        target_label: container_id_short
+        replacement: '${1}'
+      - source_labels: [name]
+        regex: '/(.+)'
+        target_label: container_name
+        replacement: '${1}'
 
   - job_name: 'traefik'
     static_configs:

@@ -3,13 +3,13 @@
 asphub_client_version: "latest"
 asphub_server_version: "latest"
 asphub_postgres_version: "17.5-alpine"
-minio_version: "RELEASE.2025-05-24T17-08-30Z"
+asphub_minio_version: "RELEASE.2025-05-24T17-08-30Z"
 
 # Container Images
 asphub_client_image: "ghcr.io/llamasscripters/asphub-client"
 asphub_server_image: "ghcr.io/llamasscripters/asphub-server"
-postgres_image: "postgres"
-minio_image: "minio/minio"
+asphub_postgres_image: "postgres"
+asphub_minio_image: "minio/minio"
 
 asphub_env_vars:
   BETTER_AUTH_SECRET: "{{ vault_asphub_auth_secret }}"

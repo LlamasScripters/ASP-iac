@@ -175,6 +175,7 @@ secrets:
 volumes:
   postgres_data:
   minio_data:
+
 networks:
   proxy_traefik_proxy:
     external: true

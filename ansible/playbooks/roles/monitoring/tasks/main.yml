@@ -15,23 +15,23 @@
 
 - name: Pull Prometheus image
   community.docker.docker_image_pull:
-    name: "prom/prometheus:{{ prometheus_version }}"
+    name: "prom/prometheus:{{ monitoring_prometheus_version }}"
 
 - name: Pull Grafana image
   community.docker.docker_image_pull:
-    name: "grafana/grafana:{{ grafana_version }}"
+    name: "grafana/grafana:{{ monitoring_grafana_version }}"
 
 - name: Pull Node Exporter image
   community.docker.docker_image_pull:
-    name: "prom/node-exporter:{{ node_exporter_version }}"
+    name: "prom/node-exporter:{{ monitoring_node_exporter_version }}"
 
 - name: Pull cAdvisor image
   community.docker.docker_image_pull:
-    name: "gcr.io/cadvisor/cadvisor:{{ cadvisor_version }}"
+    name: "gcr.io/cadvisor/cadvisor:{{ monitoring_cadvisor_version }}"
 
 - name: Pull AlertManager image
   community.docker.docker_image_pull:
-    name: "prom/alertmanager:{{ alertmanager_version }}"
+    name: "prom/alertmanager:{{ monitoring_alertmanager_version }}"
 
 - name: Create monitoring base directory
   ansible.builtin.file:
@@ -71,8 +71,11 @@
   register: alertmanager_config_templated
 
 - name: Calculate AlertManager config hash after templating
-  ansible.builtin.shell: |
-    md5sum /app/monitoring/alertmanager/alertmanager.yml | cut -d' ' -f1 | head -c 12
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      md5sum /app/monitoring/alertmanager/alertmanager.yml | cut -d' ' -f1 | head -c 12
+    executable: /bin/bash
   register: alertmanager_config_hash_result
   changed_when: false
 
@@ -130,17 +133,17 @@
     detach: true
     compose: /app/monitoring/compose.yml
   environment:
-    GRAFANA_DOMAIN: "{{ grafana_domain }}"
-    PROMETHEUS_DOMAIN: "{{ prometheus_domain }}"
-    ALERTMANAGER_DOMAIN: "{{ alertmanager_domain }}"
-    PROMETHEUS_VERSION: "{{ prometheus_version }}"
-    GRAFANA_VERSION: "{{ grafana_version }}"
-    NODE_EXPORTER_VERSION: "{{ node_exporter_version }}"
-    CADVISOR_VERSION: "{{ cadvisor_version }}"
-    ALERTMANAGER_VERSION: "{{ alertmanager_version }}"
-    PROMETHEUS_RETENTION: "{{ prometheus_retention }}"
-    GRAFANA_ADMIN_USER: "{{ grafana_admin_user }}"
-    GRAFANA_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+    ALERTMANAGER_DOMAIN: "{{ monitoring_alertmanager_domain }}"
+    ALERTMANAGER_VERSION: "{{ monitoring_alertmanager_version }}"
+    CADVISOR_VERSION: "{{ monitoring_cadvisor_version }}"
+    GRAFANA_ADMIN_USER: "{{ monitoring_grafana_admin_user }}"
+    GRAFANA_ADMIN_PASSWORD: "{{ monitoring_grafana_admin_password }}"
+    GRAFANA_DOMAIN: "{{ monitoring_grafana_domain }}"
+    GRAFANA_VERSION: "{{ monitoring_grafana_version }}"
+    NODE_EXPORTER_VERSION: "{{ monitoring_node_exporter_version }}"
+    PROMETHEUS_DOMAIN: "{{ monitoring_prometheus_domain }}"
+    PROMETHEUS_RETENTION: "{{ monitoring_prometheus_retention }}"
+    PROMETHEUS_VERSION: "{{ monitoring_prometheus_version }}"
 
 - name: Wait for monitoring stack services to be ready
   ansible.builtin.shell:
@@ -172,7 +175,7 @@
   ansible.builtin.debug:
     msg:
       - "Monitoring stack deployed successfully!"
-      - "Grafana: https://{{ grafana_domain }}"
-      - "Prometheus: https://{{ prometheus_domain }}"
-      - "AlertManager: https://{{ alertmanager_domain }}"
-      - "Default Grafana credentials: {{ grafana_admin_user }}/{{ grafana_admin_password }}"
+      - "Grafana: https://{{ monitoring_grafana_domain }}"
+      - "Prometheus: https://{{ monitoring_prometheus_domain }}"
+      - "AlertManager: https://{{ monitoring_alertmanager_domain }}"
+      - "Default Grafana credentials: {{ monitoring_grafana_admin_user }}/admin123" # show default password for security

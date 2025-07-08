@@ -3,34 +3,104 @@ global:
   smtp_from: 'alertmanager@mchegdali.cloud'
 
 route:
-  group_by: ['alertname']
+  group_by: ['alertname', 'service_name', 'container_name', 'severity']
   group_wait: 30s
-  group_interval: 5m
-  repeat_interval: 4h
+  group_interval: 10m
+  repeat_interval: 6h
   receiver: 'discord'
+  routes:
+  - match:
+      severity: critical
+    group_wait: 10s
+    group_interval: 5m
+    repeat_interval: 2h
+    receiver: 'discord-critical'
+  - match:
+      severity: warning
+    group_wait: 2m
+    group_interval: 15m
+    repeat_interval: 8h
+    receiver: 'discord-warning'
 
 receivers:
 - name: 'discord'
   discord_configs:
-  - webhook_url: '{{ discord_webhook_url }}'
+  - webhook_url: '{{ monitoring_discord_webhook_url }}'
     send_resolved: true
-    title: '🚨 AlertManager Notification'
+    title: '📊 Monitoring Alert'
     message: |
-      {% raw %}{{ if eq .Status "firing" }}🔥 **Alert Firing**{{ else }}✅ **Alert Resolved**{{ end }}
+      {% raw %}{{ if eq .Status "firing" }}🔥 **{{ .Alerts | len }} Alert(s) Firing**{{ else }}✅ **{{ .Alerts | len }} Alert(s) Resolved**{{ end }}
       
       {{ range .Alerts }}
       **{{ .Annotations.summary }}**
-      Description: {{ .Annotations.description }}
-      Instance: {{ .Labels.instance }}
-      Severity: {{ .Labels.severity }}
+      {{ if .Labels.service_name }}🏷️ **Service:** {{ .Labels.service_name }}{{ else if .Labels.container_name }}📦 **Container:** {{ .Labels.container_name }}{{ else }}🖥️ **Node:** {{ .Labels.instance | reReplaceAll ":.*" "" }}{{ end }}
+      📋 **Details:** {{ .Annotations.description }}
+      ⚠️ **Severity:** {{ .Labels.severity | title }}
+      ⏰ **Started:** {{ .StartsAt.Format "15:04:05" }}
+      {{ end }}{% endraw %}
+    username: 'AlertManager'
+    avatar_url: 'https://prometheus.io/assets/prometheus_logo-cb55bb5c346.png'
+
+- name: 'discord-critical'
+  discord_configs:
+  - webhook_url: '{{ monitoring_discord_webhook_url }}'
+    send_resolved: true
+    title: '🚨 CRITICAL ALERT'
+    message: |
+      {% raw %}{{ if eq .Status "firing" }}🔥 **{{ .Alerts | len }} CRITICAL Alert(s)**{{ else }}✅ **{{ .Alerts | len }} Critical Alert(s) Resolved**{{ end }}
+      
+      {{ range .Alerts }}
+      **🚨 {{ .Annotations.summary }}**
+      {{ if .Labels.service_name }}🏷️ **Service:** {{ .Labels.service_name }}{{ else if .Labels.container_name }}📦 **Container:** {{ .Labels.container_name }}{{ else }}🖥️ **Node:** {{ .Labels.instance | reReplaceAll ":.*" "" }}{{ end }}
+      📋 **Details:** {{ .Annotations.description }}
+      ⏰ **Started:** {{ .StartsAt.Format "15:04:05" }}
+      {{ end }}{% endraw %}
+    username: 'AlertManager'
+    avatar_url: 'https://prometheus.io/assets/prometheus_logo-cb55bb5c346.png'
+
+- name: 'discord-warning'
+  discord_configs:
+  - webhook_url: '{{ monitoring_discord_webhook_url }}'
+    send_resolved: true
+    title: '⚠️ Warning Alert'
+    message: |
+      {% raw %}{{ if eq .Status "firing" }}⚠️ **{{ .Alerts | len }} Warning Alert(s)**{{ else }}✅ **{{ .Alerts | len }} Warning Alert(s) Resolved**{{ end }}
+      
+      {{ range .Alerts }}
+      **⚠️ {{ .Annotations.summary }}**
+      {{ if .Labels.service_name }}🏷️ **Service:** {{ .Labels.service_name }}{{ else if .Labels.container_name }}📦 **Container:** {{ .Labels.container_name }}{{ else }}🖥️ **Node:** {{ .Labels.instance | reReplaceAll ":.*" "" }}{{ end }}
+      📋 **Details:** {{ .Annotations.description }}
+      ⏰ **Started:** {{ .StartsAt.Format "15:04:05" }}
       {{ end }}{% endraw %}
     username: 'AlertManager'
     avatar_url: 'https://prometheus.io/assets/prometheus_logo-cb55bb5c346.png'
 
 
 inhibit_rules:
+  # Inhibit warning alerts when critical alerts are firing for the same service/container
   - source_match:
       severity: 'critical'
     target_match:
       severity: 'warning'
-    equal: ['alertname', 'dev', 'instance']
+    equal: ['alertname', 'service_name', 'container_name', 'instance']
+  
+  # Inhibit duplicate container alerts
+  - source_match:
+      alertname: 'ContainerResourceExhaustion'
+    target_match_re:
+      alertname: 'Container.*Usage.*'
+    equal: ['container_name', 'instance']
+  
+  # Inhibit node alerts when specific container alerts are firing
+  - source_match_re:
+      alertname: 'Container.*Critical'
+    target_match_re:
+      alertname: 'High.*Usage'
+    equal: ['instance']
+  
+  # Inhibit memory pressure warnings when critical memory alerts exist
+  - source_match:
+      alertname: 'MemoryPressure'
+    target_match:
+      alertname: 'HighMemoryUsage'
+    equal: ['instance']

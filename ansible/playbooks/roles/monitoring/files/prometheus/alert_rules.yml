@@ -29,13 +29,58 @@ groups:
       description: "Memory usage is above 85% for more than 10 minutes on {{ $labels.instance }}."
 
   - alert: DiskSpaceLow
+    expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs"})) * 100 > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Disk space low on {{ $labels.instance }}"
+      description: "Disk usage is above 85% on {{ $labels.instance }} ({{ $labels.device }})."
+
+  - alert: DiskSpaceCritical
     expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs"})) * 100 > 90
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Disk space critical on {{ $labels.instance }}"
+      description: "Disk usage is above 90% on {{ $labels.instance }} ({{ $labels.device }})."
+
+  - alert: HighLoadAverage
+    expr: node_load15 / on(instance) count by (instance) (node_cpu_seconds_total{mode="idle"}) > 1.5
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High load average on {{ $labels.instance }}"
+      description: "Load average is above 1.5x CPU count for more than 10 minutes on {{ $labels.instance }}."
+
+  - alert: HighIOWait
+    expr: rate(node_cpu_seconds_total{mode="iowait"}[5m]) * 100 > 5
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High I/O wait on {{ $labels.instance }}"
+      description: "I/O wait time is above 5% for more than 10 minutes on {{ $labels.instance }}."
+
+  - alert: MemoryPressure
+    expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
     for: 5m
     labels:
       severity: critical
     annotations:
-      summary: "Disk space low on {{ $labels.instance }}"
-      description: "Disk usage is above 90% on {{ $labels.instance }} ({{ $labels.device }})."
+      summary: "Memory pressure on {{ $labels.instance }}"
+      description: "Memory usage is above 90% for more than 5 minutes on {{ $labels.instance }}."
+
+  - alert: NodeExporterDown
+    expr: up{job="node-exporter"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Node Exporter down on {{ $labels.instance }}"
+      description: "Node Exporter has been down for more than 2 minutes on {{ $labels.instance }}."
 
 - name: docker_alerts  
   rules:
@@ -48,20 +93,121 @@ groups:
       summary: "Container {{ $labels.name }} is down"
       description: "Container {{ $labels.name }} has been down for more than 5 minutes."
 
-  - alert: HighContainerCpuUsage
-    expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+  - alert: ContainerCpuUsageWarning
+    expr: rate(container_cpu_usage_seconds_total{name!="/"}[5m]) * 100 > 80
     for: 10m
     labels:
       severity: warning
     annotations:
-      summary: "High CPU usage in container {{ $labels.name }}"
-      description: "Container {{ $labels.name }} CPU usage is above 80% for more than 10 minutes."
+      summary: "High CPU usage in container {{ $labels.container_name }}"
+      description: "Container {{ $labels.container_name }} CPU usage is above 80% for more than 10 minutes on {{ $labels.instance }}."
 
-  - alert: HighContainerMemoryUsage
-    expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 85
+  - alert: ContainerCpuUsageCritical
+    expr: rate(container_cpu_usage_seconds_total{name!="/"}[5m]) * 100 > 90
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Critical CPU usage in container {{ $labels.container_name }}"
+      description: "Container {{ $labels.container_name }} CPU usage is above 90% for more than 5 minutes on {{ $labels.instance }}."
+
+  - alert: ContainerMemoryUsageWarning
+    expr: (container_memory_usage_bytes{name!="/"} / container_spec_memory_limit_bytes{name!="/"}) * 100 > 80
     for: 10m
     labels:
       severity: warning
     annotations:
-      summary: "High memory usage in container {{ $labels.name }}"
-      description: "Container {{ $labels.name }} memory usage is above 85% for more than 10 minutes."
+      summary: "High memory usage in container {{ $labels.container_name }}"
+      description: "Container {{ $labels.container_name }} memory usage is above 80% for more than 10 minutes on {{ $labels.instance }}."
+
+  - alert: ContainerMemoryUsageCritical
+    expr: (container_memory_usage_bytes{name!="/"} / container_spec_memory_limit_bytes{name!="/"}) * 100 > 90
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Critical memory usage in container {{ $labels.container_name }}"
+      description: "Container {{ $labels.container_name }} memory usage is above 90% for more than 5 minutes on {{ $labels.instance }}."
+
+  - alert: ContainerRestartingFrequently
+    expr: increase(container_start_time_seconds[1h]) > 3
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Container {{ $labels.container_name }} restarting frequently"
+      description: "Container {{ $labels.container_name }} has restarted more than 3 times in the last hour on {{ $labels.instance }}."
+
+  - alert: ContainerHighNetworkUsage
+    expr: rate(container_network_receive_bytes_total[5m]) + rate(container_network_transmit_bytes_total[5m]) > 100000000
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High network usage in container {{ $labels.container_name }}"
+      description: "Container {{ $labels.container_name }} network usage is above 100MB/s for more than 10 minutes on {{ $labels.instance }}."
+
+  - alert: ContainerFileSystemUsage
+    expr: (container_fs_usage_bytes{name!="/"} / container_fs_limit_bytes{name!="/"}) * 100 > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High filesystem usage in container {{ $labels.container_name }}"
+      description: "Container {{ $labels.container_name }} filesystem usage is above 85% on {{ $labels.instance }}."
+
+  - alert: cAdvisorDown
+    expr: up{job="cadvisor"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "cAdvisor down on {{ $labels.instance }}"
+      description: "cAdvisor has been down for more than 2 minutes on {{ $labels.instance }}."
+
+- name: application_correlation_alerts
+  rules:
+  - alert: ContainerResourcesImpactingPerformance
+    expr: |
+      (
+        rate(container_cpu_usage_seconds_total{name!="/"}[5m]) * 100 > 70
+        and
+        rate(container_network_receive_bytes_total[5m]) + rate(container_network_transmit_bytes_total[5m]) > 50000000
+      ) or (
+        (container_memory_usage_bytes{name!="/"} / container_spec_memory_limit_bytes{name!="/"}) * 100 > 70
+        and
+        rate(container_network_receive_bytes_total[5m]) + rate(container_network_transmit_bytes_total[5m]) > 50000000
+      )
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Container {{ $labels.container_name }} resource usage may impact performance"
+      description: "Container {{ $labels.container_name }} shows high resource usage (CPU >70% or Memory >70%) combined with high network traffic (>50MB/s) for more than 5 minutes on {{ $labels.instance }}."
+
+  - alert: ContainerResourceExhaustion
+    expr: |
+      (
+        rate(container_cpu_usage_seconds_total{name!="/"}[5m]) * 100 > 95
+        or
+        (container_memory_usage_bytes{name!="/"} / container_spec_memory_limit_bytes{name!="/"}) * 100 > 95
+      )
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Container {{ $labels.container_name }} resource exhaustion"
+      description: "Container {{ $labels.container_name }} is experiencing resource exhaustion (CPU >95% or Memory >95%) for more than 2 minutes on {{ $labels.instance }}. This may cause application degradation."
+
+  - alert: ContainerCapacityPlanningWarning
+    expr: |
+      predict_linear(
+        container_memory_usage_bytes{name!="/"}[1h], 
+        24 * 3600
+      ) / container_spec_memory_limit_bytes{name!="/"} > 0.9
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Container {{ $labels.container_name }} approaching memory limits"
+      description: "Container {{ $labels.container_name }} memory usage trend indicates it will exceed 90% of limits within 24 hours on {{ $labels.instance }}."

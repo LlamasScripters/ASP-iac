@@ -124,7 +124,7 @@ jobs:
       OVH_CONSUMER_KEY: ${{ secrets.OVH_CONSUMER_KEY }}
       ANSIBLE_VAULT_PASS: ${{ secrets.ANSIBLE_VAULT_PASS }}
       GITHUB_USERNAME: ${{ github.repository_owner }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Token to pull images from ghcr.io
+      GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }} # Token to pull images from ghcr.io
 
     steps:
       - name: Checkout

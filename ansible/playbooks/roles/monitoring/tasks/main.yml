@@ -126,6 +126,18 @@
     data_src: /app/monitoring/grafana/dashboards/dashboard.yml
   register: grafana_dashboards_result
 
+- name: Create Grafana ASPHub Overview Dashboard Docker Config
+  community.docker.docker_config:
+    name: "{{ grafana_asphub_overview_dashboard_name }}"
+    data_src: /app/monitoring/grafana/dashboards/asphub-overview-dashboard.json
+  register: grafana_asphub_overview_dashboard_result
+
+- name: Create Grafana ASPHub Server Dashboard Docker Config
+  community.docker.docker_config:
+    name: "{{ grafana_asphub_server_dashboard_name }}"
+    data_src: /app/monitoring/grafana/dashboards/asphub-server-dashboard.json
+  register: grafana_asphub_server_dashboard_result
+
 - name: Deploy monitoring stack
   community.docker.docker_stack:
     name: monitoring

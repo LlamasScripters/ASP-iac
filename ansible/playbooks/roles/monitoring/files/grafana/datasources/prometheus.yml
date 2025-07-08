@@ -7,3 +7,8 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     editable: true
+    basicAuth: false
+    jsonData:
+      httpMethod: POST
+      prometheusType: Prometheus
+      prometheusVersion: 2.55.1

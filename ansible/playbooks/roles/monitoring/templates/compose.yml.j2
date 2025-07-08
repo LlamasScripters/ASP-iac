@@ -62,6 +62,10 @@ services:
         target: /etc/grafana/provisioning/datasources/prometheus.yml
       - source: {{ grafana_dashboards_name }}
         target: /etc/grafana/provisioning/dashboards/dashboard.yml
+      - source: {{ grafana_asphub_overview_dashboard_name }}
+        target: /etc/grafana/provisioning/dashboards/asphub-overview-dashboard.json
+      - source: {{ grafana_asphub_server_dashboard_name }}
+        target: /etc/grafana/provisioning/dashboards/asphub-server-dashboard.json
     networks:
       - monitoring_network
       - proxy_traefik_proxy
@@ -202,4 +206,8 @@ configs:
   {{ grafana_datasources_name }}:
     external: true
   {{ grafana_dashboards_name }}:
+    external: true
+  {{ grafana_asphub_overview_dashboard_name }}:
+    external: true
+  {{ grafana_asphub_server_dashboard_name }}:
     external: true

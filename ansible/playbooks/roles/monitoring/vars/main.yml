@@ -23,3 +23,7 @@ monitoring_cadvisor_version: "v0.52.1"
 # AlertManager Configuration
 monitoring_alertmanager_version: "v0.28.1"
 monitoring_discord_webhook_url: "{{ vault_discord_webhook_url | default('https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN') }}"
+
+# Docker Config Names
+grafana_asphub_overview_dashboard_name: "grafana_asphub_overview_dashboard_{{ ansible_date_time.iso8601_basic_short }}"
+grafana_asphub_server_dashboard_name: "grafana_asphub_server_dashboard_{{ ansible_date_time.iso8601_basic_short }}"

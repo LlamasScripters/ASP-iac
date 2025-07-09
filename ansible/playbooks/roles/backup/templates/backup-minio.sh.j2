@@ -1,0 +1,135 @@
+#!/bin/bash
+
+# MinIO Backup Script for ASPHub
+# This script backs up MinIO object storage data and configuration
+
+set -euo pipefail
+
+# Load environment variables
+source /opt/backup/.env
+
+# Configuration
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="${MINIO_BACKUP_PATH}/${TIMESTAMP}"
+LOG_FILE="${BACKUP_LOG_FILE}"
+
+# Functions
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [MINIO] $1" | tee -a "${LOG_FILE}"
+}
+
+error_exit() {
+    log "ERROR: $1"
+    exit 1
+}
+
+cleanup() {
+    if [[ -n "${BACKUP_DIR:-}" ]] && [[ -d "$BACKUP_DIR" ]]; then
+        log "Cleaning up temporary backup directory: $BACKUP_DIR"
+        rm -rf "$BACKUP_DIR"
+    fi
+}
+
+# Trap for cleanup on exit
+trap cleanup EXIT
+
+log "Starting MinIO backup..."
+
+# Create backup directory
+mkdir -p "$BACKUP_DIR" || error_exit "Failed to create backup directory"
+
+# Find the MinIO container
+CONTAINER_ID=$(docker ps --filter "name=${MINIO_CONTAINER}" --format "{{"{{"}}.ID{{"}}"}}" | head -n1)
+if [[ -z "$CONTAINER_ID" ]]; then
+    error_exit "MinIO container not found: ${MINIO_CONTAINER}"
+fi
+
+log "Found MinIO container: $CONTAINER_ID"
+
+# Install MinIO client if not present
+if ! command -v mc &> /dev/null; then
+    log "Installing MinIO client..."
+    wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc
+    chmod +x /tmp/mc
+    MC_CMD="/tmp/mc"
+else
+    MC_CMD="mc"
+fi
+
+# Configure MinIO client
+log "Configuring MinIO client..."
+MINIO_ENDPOINT="http://$(docker inspect "$CONTAINER_ID" --format '{{"{{range"}} .NetworkSettings.Networks}}{{"{{"}}.IPAddress{{"}}"}}{{"{{end}}"}}'):9000"
+
+$MC_CMD alias set backup-minio "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" || error_exit "Failed to configure MinIO client"
+
+# List all buckets and create bucket list
+log "Listing MinIO buckets..."
+$MC_CMD ls backup-minio > "${BACKUP_DIR}/bucket_list.txt" || error_exit "Failed to list buckets"
+
+# Create directory for bucket data
+mkdir -p "${BACKUP_DIR}/buckets"
+
+# Backup each bucket
+while IFS= read -r line; do
+    if [[ "$line" =~ \[.*\][[:space:]]+(.+)/ ]]; then
+        BUCKET="${BASH_REMATCH[1]}"
+        log "Backing up bucket: $BUCKET"
+        
+        # Create bucket directory
+        mkdir -p "${BACKUP_DIR}/buckets/$BUCKET"
+        
+        # Mirror bucket contents
+        $MC_CMD mirror backup-minio/"$BUCKET" "${BACKUP_DIR}/buckets/$BUCKET" || log "WARNING: Failed to backup bucket $BUCKET"
+        
+        # Get bucket info and policies
+        $MC_CMD stat backup-minio/"$BUCKET" > "${BACKUP_DIR}/buckets/${BUCKET}_stat.txt" 2>/dev/null || true
+        $MC_CMD policy get backup-minio/"$BUCKET" > "${BACKUP_DIR}/buckets/${BUCKET}_policy.json" 2>/dev/null || true
+    fi
+done < "${BACKUP_DIR}/bucket_list.txt"
+
+# Backup MinIO configuration if accessible
+log "Backing up MinIO configuration..."
+if docker exec "$CONTAINER_ID" test -d /data/.minio.sys 2>/dev/null; then
+    mkdir -p "${BACKUP_DIR}/config"
+    docker cp "$CONTAINER_ID":/data/.minio.sys "${BACKUP_DIR}/config/" 2>/dev/null || log "WARNING: Could not backup MinIO configuration"
+fi
+
+# Export MinIO container environment
+log "Exporting MinIO container environment..."
+docker inspect "$CONTAINER_ID" > "${BACKUP_DIR}/container_inspect.json" || log "WARNING: Could not export container configuration"
+
+# Create backup metadata
+cat > "${BACKUP_DIR}/backup_metadata.json" << EOF
+{
+    "backup_type": "minio",
+    "timestamp": "${TIMESTAMP}",
+    "container_id": "${CONTAINER_ID}",
+    "container_name": "${MINIO_CONTAINER}",
+    "minio_endpoint": "${MINIO_ENDPOINT}",
+    "backup_method": "mc mirror",
+    "created_by": "$(whoami)@$(hostname)",
+    "created_at": "$(date -Iseconds)"
+}
+EOF
+
+# Create file inventory
+log "Creating file inventory..."
+find "${BACKUP_DIR}/buckets" -type f -exec ls -la {} \; > "${BACKUP_DIR}/file_inventory.txt" 2>/dev/null || true
+
+# Calculate backup size
+BACKUP_SIZE=$(du -sh "$BACKUP_DIR" | cut -f1)
+BUCKET_COUNT=$(find "${BACKUP_DIR}/buckets" -maxdepth 1 -type d | wc -l)
+FILE_COUNT=$(find "${BACKUP_DIR}/buckets" -type f | wc -l)
+
+log "MinIO backup completed successfully. Size: $BACKUP_SIZE, Buckets: $((BUCKET_COUNT-1)), Files: $FILE_COUNT"
+
+# Clean up old backups (keep only last N days)
+log "Cleaning up old MinIO backups (keeping last ${BACKUP_RETENTION_DAYS} days)..."
+find "${MINIO_BACKUP_PATH}" -maxdepth 1 -type d -name "20*" -mtime +${BACKUP_RETENTION_DAYS} -exec rm -rf {} \; 2>/dev/null || true
+
+# Clean up temporary MinIO client
+if [[ "$MC_CMD" == "/tmp/mc" ]]; then
+    rm -f /tmp/mc
+fi
+
+log "MinIO backup finished: $BACKUP_DIR" 

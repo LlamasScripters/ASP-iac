@@ -1,0 +1,11 @@
+[Unit]
+Description=ASPHub 3-2-1 Backup Timer
+Requires=backup.service
+
+[Timer]
+OnCalendar={{ backup_schedule }}
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target 

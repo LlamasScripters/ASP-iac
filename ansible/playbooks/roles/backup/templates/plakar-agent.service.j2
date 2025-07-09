@@ -1,0 +1,16 @@
+[Unit]
+Description=Plakar Agent
+After=network.target
+
+[Service]
+Type=simple
+User={{ plakar_agent_user }}
+Group={{ plakar_agent_user }}
+WorkingDirectory=/opt/backup
+ExecStart=/usr/local/bin/plakar agent
+Restart=always
+RestartSec=10
+Environment="HOME=/opt/backup"
+
+[Install]
+WantedBy=multi-user.target 

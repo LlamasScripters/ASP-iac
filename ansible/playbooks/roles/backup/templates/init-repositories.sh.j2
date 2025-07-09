@@ -1,0 +1,124 @@
+#!/bin/bash
+
+# Plakar Repositories Initialization Script
+# This script initializes the three repositories for the 3-2-1 backup strategy
+
+set -euo pipefail
+
+# Load environment variables
+source /opt/backup/.env
+
+LOG_FILE="${BACKUP_LOG_FILE}"
+
+# Functions
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [INIT] $1" | tee -a "${LOG_FILE}"
+}
+
+error_exit() {
+    log "ERROR: $1"
+    exit 1
+}
+
+create_repository() {
+    local repo_path="$1"
+    local passphrase_var="$2"
+    local description="$3"
+    
+    log "Initializing repository: $description"
+    log "Repository path: $repo_path"
+    
+    # Check if repository already exists
+    export PLAKAR_REPOSITORY_PASSPHRASE="${!passphrase_var}"
+    
+    if plakar at "$repo_path" ls >/dev/null 2>&1; then
+        log "Repository already exists: $repo_path"
+        return 0
+    fi
+    
+    # Create repository with expect for interactive passphrase
+    local expect_script="/tmp/plakar_init_${RANDOM}.exp"
+    cat > "$expect_script" << EOF
+#!/usr/bin/expect -f
+set timeout 60
+spawn plakar at "$repo_path" create
+expect "repository passphrase:"
+send "${!passphrase_var}\r"
+expect "repository passphrase (confirm):"
+send "${!passphrase_var}\r"
+expect eof
+catch wait result
+exit [lindex \$result 3]
+EOF
+    
+    chmod +x "$expect_script"
+    
+    if "$expect_script"; then
+        log "Successfully created repository: $repo_path"
+        rm -f "$expect_script"
+        return 0
+    else
+        log "Failed to create repository: $repo_path"
+        rm -f "$expect_script"
+        return 1
+    fi
+}
+
+# Install expect if not present
+if ! command -v expect &> /dev/null; then
+    log "Installing expect..."
+    apt-get update && apt-get install -y expect || error_exit "Failed to install expect"
+fi
+
+log "Starting Plakar repositories initialization..."
+
+# Create local repository
+log "=== Creating local repository ==="
+mkdir -p "$(dirname "$LOCAL_REPO_PATH")"
+if ! create_repository "$LOCAL_REPO_PATH" "LOCAL_REPO_PASSPHRASE" "Local backup repository"; then
+    error_exit "Failed to create local repository"
+fi
+
+# Create SFTP repository
+log "=== Creating SFTP repository ==="
+if ! create_repository "$SFTP_REPO_PATH" "SFTP_REPO_PASSPHRASE" "Remote SFTP backup repository"; then
+    error_exit "Failed to create SFTP repository"
+fi
+
+# Create S3 repository
+log "=== Creating S3 repository ==="
+if ! create_repository "$S3_REPO_PATH" "S3_REPO_PASSPHRASE" "AWS S3 backup repository"; then
+    error_exit "Failed to create S3 repository"
+fi
+
+# Verify all repositories
+log "=== Verifying repositories ==="
+
+# Verify local repository
+export PLAKAR_REPOSITORY_PASSPHRASE="$LOCAL_REPO_PASSPHRASE"
+if plakar at "$LOCAL_REPO_PATH" ls >/dev/null 2>&1; then
+    log "✓ Local repository verified: $LOCAL_REPO_PATH"
+else
+    error_exit "Local repository verification failed"
+fi
+
+# Verify SFTP repository
+export PLAKAR_REPOSITORY_PASSPHRASE="$SFTP_REPO_PASSPHRASE"
+if plakar at "$SFTP_REPO_PATH" ls >/dev/null 2>&1; then
+    log "✓ SFTP repository verified: $SFTP_REPO_PATH"
+else
+    error_exit "SFTP repository verification failed"
+fi
+
+# Verify S3 repository
+export PLAKAR_REPOSITORY_PASSPHRASE="$S3_REPO_PASSPHRASE"
+if plakar at "$S3_REPO_PATH" ls >/dev/null 2>&1; then
+    log "✓ S3 repository verified: $S3_REPO_PATH"
+else
+    error_exit "S3 repository verification failed"
+fi
+
+log "=== All repositories initialized successfully ==="
+log "Local: $LOCAL_REPO_PATH"
+log "SFTP: $SFTP_REPO_PATH"
+log "S3: $S3_REPO_PATH" 

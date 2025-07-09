@@ -1,0 +1,142 @@
+---
+- name: Create backup directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0750'
+    owner: root
+    group: root
+  loop:
+    - /opt/backup
+    - /opt/backup/scripts
+    - /opt/backup/data
+    - /opt/backup/repositories
+    - /var/log/backup
+
+- name: Install Go (required for Plakar)
+  ansible.builtin.apt:
+    name: golang-go
+    state: present
+    update_cache: true
+
+- name: Check if Plakar is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/plakar
+  register: plakar_binary
+
+- name: Install Plakar
+  ansible.builtin.shell: |
+    export GOPATH=/opt/backup/go
+    export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
+    go install github.com/PlakarKorp/plakar/cmd/plakar@latest
+    cp $GOPATH/bin/plakar /usr/local/bin/plakar
+    chmod +x /usr/local/bin/plakar
+  when: not plakar_binary.stat.exists
+  environment:
+    GOPATH: /opt/backup/go
+
+- name: Create backup user
+  ansible.builtin.user:
+    name: "{{ backup_user }}"
+    system: true
+    shell: /bin/bash
+    home: /opt/backup
+    create_home: false
+
+- name: Create Plakar agent service
+  ansible.builtin.template:
+    src: plakar-agent.service.j2
+    dest: /etc/systemd/system/plakar-agent.service
+    mode: '0644'
+  notify: reload systemd
+
+- name: Start and enable Plakar agent
+  ansible.builtin.systemd:
+    name: plakar-agent
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Create backup environment file
+  ansible.builtin.template:
+    src: backup.env.j2
+    dest: /opt/backup/.env
+    mode: '0600'
+    owner: "{{ backup_user }}"
+    group: "{{ backup_user }}"
+
+- name: Create PostgreSQL backup script
+  ansible.builtin.template:
+    src: backup-postgres.sh.j2
+    dest: /opt/backup/scripts/backup-postgres.sh
+    mode: '0750'
+    owner: "{{ backup_user }}"
+    group: "{{ backup_user }}"
+
+- name: Create MinIO backup script
+  ansible.builtin.template:
+    src: backup-minio.sh.j2
+    dest: /opt/backup/scripts/backup-minio.sh
+    mode: '0750'
+    owner: "{{ backup_user }}"
+    group: "{{ backup_user }}"
+
+- name: Create main backup orchestration script
+  ansible.builtin.template:
+    src: backup-orchestrator.sh.j2
+    dest: /opt/backup/scripts/backup-orchestrator.sh
+    mode: '0750'
+    owner: "{{ backup_user }}"
+    group: "{{ backup_user }}"
+
+- name: Create restore script
+  ansible.builtin.template:
+    src: restore.sh.j2
+    dest: /opt/backup/scripts/restore.sh
+    mode: '0750'
+    owner: "{{ backup_user }}"
+    group: "{{ backup_user }}"
+
+- name: Create Plakar repositories initialization script
+  ansible.builtin.template:
+    src: init-repositories.sh.j2
+    dest: /opt/backup/scripts/init-repositories.sh
+    mode: '0750'
+    owner: "{{ backup_user }}"
+    group: "{{ backup_user }}"
+
+- name: Create systemd timer for backups
+  ansible.builtin.template:
+    src: backup.timer.j2
+    dest: /etc/systemd/system/backup.timer
+    mode: '0644'
+  notify: reload systemd
+
+- name: Create systemd service for backups
+  ansible.builtin.template:
+    src: backup.service.j2
+    dest: /etc/systemd/system/backup.service
+    mode: '0644'
+  notify: reload systemd
+
+- name: Create backup validation script
+  ansible.builtin.template:
+    src: validate-backups.sh.j2
+    dest: /opt/backup/scripts/validate-backups.sh
+    mode: '0750'
+    owner: "{{ backup_user }}"
+    group: "{{ backup_user }}"
+
+- name: Initialize Plakar repositories (run once)
+  ansible.builtin.shell: |
+    sudo -u {{ backup_user }} /opt/backup/scripts/init-repositories.sh
+  register: init_result
+  failed_when: false
+  changed_when: init_result.rc == 0
+
+- name: Enable and start backup timer
+  ansible.builtin.systemd:
+    name: backup.timer
+    state: started
+    enabled: true
+    daemon_reload: true 

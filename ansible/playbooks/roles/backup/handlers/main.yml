@@ -1,0 +1,14 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart plakar-agent
+  ansible.builtin.systemd:
+    name: plakar-agent
+    state: restarted
+
+- name: restart backup-timer
+  ansible.builtin.systemd:
+    name: backup.timer
+    state: restarted 

@@ -55,3 +55,10 @@
   become: true
   roles:
     - asphub
+
+- name: Setup backup system with 3-2-1 strategy
+  tags: backup
+  hosts: managers
+  become: true
+  roles:
+    - backup

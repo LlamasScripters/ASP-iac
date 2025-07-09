@@ -199,15 +199,109 @@ groups:
       summary: "Container {{ $labels.container_name }} resource exhaustion"
       description: "Container {{ $labels.container_name }} is experiencing resource exhaustion (CPU >95% or Memory >95%) for more than 2 minutes on {{ $labels.instance }}. This may cause application degradation."
 
-  - alert: ContainerCapacityPlanningWarning
-    expr: |
-      predict_linear(
-        container_memory_usage_bytes{name!="/"}[1h], 
-        24 * 3600
-      ) / container_spec_memory_limit_bytes{name!="/"} > 0.9
-    for: 15m
+- name: backup_alerts
+  rules:
+  - alert: BackupJobFailed
+    expr: time() - on() group_left() timestamp(backup_last_success_timestamp) > 28800  # 8 hours
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Backup job has failed or not completed"
+      description: "The backup job has not completed successfully for more than 8 hours. Last successful backup was {{ $value | humanizeDuration }} ago."
+
+  - alert: BackupMissedSchedule
+    expr: time() - on() group_left() timestamp(backup_last_attempt_timestamp) > 90000  # 25 hours
+    for: 10m
     labels:
       severity: warning
     annotations:
-      summary: "Container {{ $labels.container_name }} approaching memory limits"
-      description: "Container {{ $labels.container_name }} memory usage trend indicates it will exceed 90% of limits within 24 hours on {{ $labels.instance }}."
+      summary: "Backup job missed scheduled execution"
+      description: "The backup job has not been attempted for more than 25 hours. Last attempt was {{ $value | humanizeDuration }} ago."
+
+  - alert: BackupRepositoryAccessFailed
+    expr: backup_repository_accessible{repository_type!=""} == 0
+    for: 5m
+    labels:
+      severity: critical
+      repository_type: "{{ $labels.repository_type }}"
+    annotations:
+      summary: "Backup repository {{ $labels.repository_type }} is not accessible"
+      description: "The {{ $labels.repository_type }} backup repository is not accessible. This affects the 3-2-1 backup strategy."
+
+  - alert: BackupIntegrityCheckFailed
+    expr: backup_integrity_check_success{repository_type!=""} == 0
+    for: 5m
+    labels:
+      severity: warning
+      repository_type: "{{ $labels.repository_type }}"
+    annotations:
+      summary: "Backup integrity check failed for {{ $labels.repository_type }} repository"
+      description: "The integrity check for the {{ $labels.repository_type }} backup repository has failed. Backup data may be corrupted."
+
+  - alert: BackupDurationTooLong
+    expr: backup_duration_seconds > 7200  # 2 hours
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Backup job duration is unusually long"
+      description: "The backup job took {{ $value | humanizeDuration }} to complete, which is longer than expected (>2 hours)."
+
+  - alert: BackupStorageSpaceLow
+    expr: (1 - (backup_repository_free_bytes{repository_type!=""} / backup_repository_total_bytes{repository_type!=""})) * 100 > 85
+    for: 10m
+    labels:
+      severity: warning
+      repository_type: "{{ $labels.repository_type }}"
+    annotations:
+      summary: "Backup storage space low on {{ $labels.repository_type }} repository"
+      description: "The {{ $labels.repository_type }} backup repository is {{ $value | printf \"%.1f\" }}% full. Consider cleaning up old backups or expanding storage."
+
+  - alert: BackupStorageSpaceCritical
+    expr: (1 - (backup_repository_free_bytes{repository_type!=""} / backup_repository_total_bytes{repository_type!=""})) * 100 > 95
+    for: 5m
+    labels:
+      severity: critical
+      repository_type: "{{ $labels.repository_type }}"
+    annotations:
+      summary: "Backup storage space critical on {{ $labels.repository_type }} repository"
+      description: "The {{ $labels.repository_type }} backup repository is {{ $value | printf \"%.1f\" }}% full. Immediate action required to prevent backup failures."
+
+  - alert: BackupComponentFailure
+    expr: backup_component_success{component!=""} == 0
+    for: 5m
+    labels:
+      severity: warning
+      component: "{{ $labels.component }}"
+    annotations:
+      summary: "Backup component {{ $labels.component }} failed"
+      description: "The backup of {{ $labels.component }} component has failed. This affects data protection for this component."
+
+  - alert: PlakarAgentDown
+    expr: up{job="plakar-agent"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Plakar agent is down"
+      description: "The Plakar backup agent is not running. This will prevent backup operations from completing successfully."
+
+  - alert: BackupSyncFailed
+    expr: backup_sync_success{target_repository!=""} == 0
+    for: 5m
+    labels:
+      severity: critical
+      target_repository: "{{ $labels.target_repository }}"
+    annotations:
+      summary: "Backup synchronization failed to {{ $labels.target_repository }}"
+      description: "Failed to synchronize backups to the {{ $labels.target_repository }} repository. This compromises the 3-2-1 backup strategy."
+
+  - alert: NoRecentBackups
+    expr: time() - on() group_left() timestamp(backup_last_success_timestamp) > 172800  # 2 days
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "No recent successful backups"
+      description: "No successful backup has been completed in the last 2 days. Data protection is severely compromised."

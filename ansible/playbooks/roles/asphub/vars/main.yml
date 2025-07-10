@@ -1,7 +1,7 @@
 ---
 # ASPHub Application Versions
-asphub_client_version: "latest"
-asphub_server_version: "latest"
+asphub_client_version: "main"
+asphub_server_version: "main"
 asphub_postgres_version: "17.5-alpine"
 asphub_minio_version: "RELEASE.2025-05-24T17-08-30Z"
 

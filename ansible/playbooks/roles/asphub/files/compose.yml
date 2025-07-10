@@ -34,17 +34,37 @@ services:
         - "traefik.http.routers.asphub_client.tls.certresolver=letsencrypt"
         - "traefik.http.routers.asphub_client.service=asphub_client"
         - "traefik.http.services.asphub_client.loadbalancer.server.port=80"
-        - "shepherd.autodeploy=true"
     networks:
       - proxy_traefik_proxy
+
+  init-db:
+    image: ${ASPHUB_SERVER_IMAGE}:${ASPHUB_SERVER_VERSION}
+    secrets:
+      - asphub_env
+    volumes:
+      - migrations:/app/migrations/production:ro
+    environment:
+      - NODE_ENV=production
+      - ENV_FILE=/run/secrets/asphub_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["npx", "drizzle-kit", "migrate"]
+    deploy:
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.role == worker
+      restart_policy:
+        condition: none
+      update_config:
+        order: stop-first
+        failure_action: pause
 
   server:
     image: ${ASPHUB_SERVER_IMAGE}:${ASPHUB_SERVER_VERSION}
     secrets:
       - asphub_env
-    command:
-      - "--env-file=/run/secrets/asphub_env"
-      - "dist/index.js"
     deploy:
       placement:
         max_replicas_per_node: 1
@@ -77,12 +97,17 @@ services:
         - "traefik.http.routers.asphub_server.tls.certresolver=letsencrypt"
         - "traefik.http.routers.asphub_server.service=asphub_server"
         - "traefik.http.services.asphub_server.loadbalancer.server.port=3000"
-        - "shepherd.autodeploy=true"
     environment:
       - NODE_ENV=production
+      - ENV_FILE=/run/secrets/asphub_env
     depends_on:
-      - postgres
-      - minio
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+
     networks:
       - asphub_backend
       - proxy_traefik_proxy
@@ -106,6 +131,7 @@ services:
     networks:
       - asphub_backend
     deploy:
+      replicas: 1
       placement:
         max_replicas_per_node: 1
         constraints:
@@ -175,6 +201,7 @@ secrets:
 volumes:
   postgres_data:
   minio_data:
+  migrations:
 
 networks:
   proxy_traefik_proxy:

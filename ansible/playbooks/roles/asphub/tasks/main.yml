@@ -174,9 +174,9 @@
   ansible.builtin.debug:
     msg: "AspHub server is running on node: {{ server_node }}"
 
-- name: Execute database migration on correct node
-  ansible.builtin.shell: |
-    docker exec $(docker ps -q -f name=asphub_server) node --env-file=/run/secrets/asphub_env dist/bin/migrate.js
+- name: Execute database migration via new attached service
+  community.docker.docker_swarm_service:
+    name: init-db
   register: migration_result
   delegate_to: "{{ server_node }}"
   changed_when: true

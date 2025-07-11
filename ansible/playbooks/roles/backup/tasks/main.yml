@@ -13,11 +13,24 @@
     - /opt/backup/repositories
     - /var/log/backup
 
+- name: Check if Go is already installed
+  ansible.builtin.stat:
+    path: /usr/local/go/bin/go
+  register: go_binary
+
+- name: Download Go binary
+  ansible.builtin.get_url:
+    url: https://go.dev/dl/go1.24.5.linux-amd64.tar.gz
+    dest: /tmp/go1.24.5.linux-amd64.tar.gz
+    mode: '0644'
+
 - name: Install Go (required for Plakar)
-  ansible.builtin.apt:
-    name: golang-go
-    state: present
-    update_cache: true
+  ansible.builtin.shell:
+    cmd: |
+      rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go1.24.5.linux-amd64.tar.gz
+      export PATH=$PATH:/usr/local/go/bin
+  when: not go_binary.stat.exists
+  changed_when: not go_binary.stat.exists
 
 - name: Check if Plakar is already installed
   ansible.builtin.stat:
@@ -25,15 +38,13 @@
   register: plakar_binary
 
 - name: Install Plakar
-  ansible.builtin.shell: |
-    export GOPATH=/opt/backup/go
-    export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
-    go install github.com/PlakarKorp/plakar/cmd/plakar@latest
-    cp $GOPATH/bin/plakar /usr/local/bin/plakar
-    chmod +x /usr/local/bin/plakar
+  ansible.builtin.shell:
+    cmd: |
+      mkdir -p ~/go/bin
+      go install github.com/PlakarKorp/plakar@latest
+      mv ~/go/bin/plakar /usr/local/bin/plakar
   when: not plakar_binary.stat.exists
-  environment:
-    GOPATH: /opt/backup/go
+  changed_when: not plakar_binary.stat.exists
 
 - name: Create backup user
   ansible.builtin.user:
@@ -139,4 +150,4 @@
     name: backup.timer
     state: started
     enabled: true
-    daemon_reload: true 
+    daemon_reload: true

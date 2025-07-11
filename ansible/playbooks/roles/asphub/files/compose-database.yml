@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE}:${POSTGRES_VERSION}
+    command: "-c config_file=/etc/postgresql.conf"
+    configs:
+      - source: postgres_config
+        target: /etc/postgresql.conf
+    secrets:
+      - postgres_user
+      - postgres_password
+      - postgres_db
+    environment:
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_DB_FILE: /run/secrets/postgres_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - type: tmpfs
+        target: /dev/shm
+        tmpfs:
+          size: 134217728 # 128*2^20 bytes = 128Mb
+    networks:
+      - asphub_backend
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.50"
+          memory: "1024M"
+        limits:
+          cpus: "1.00"
+          memory: "2048M"
+      replicas: 1
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.role == worker
+
+configs:
+  postgres_config:
+    external: true
+
+secrets:
+  postgres_user:
+    external: true
+  postgres_password:
+    external: true
+  postgres_db:
+    external: true
+
+volumes:
+  postgres_data:
+
+networks:
+  asphub_backend:
+    external: true

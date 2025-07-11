@@ -1,0 +1,90 @@
+services:
+  client:
+    image: ${ASPHUB_CLIENT_IMAGE}:${ASPHUB_CLIENT_VERSION}
+    deploy:
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.role == worker
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 30s
+      update_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: rollback
+        monitor: 20s
+        max_failure_ratio: 0
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: "512M"
+        reservations:
+          cpus: "0.25"
+          memory: "256M"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.asphub_client.rule=Host(`${DOMAIN}`) && PathPrefix(`/`)"
+        - "traefik.http.routers.asphub_client.priority=10"
+        - "traefik.http.routers.asphub_client.entrypoints=websecure"
+        - "traefik.http.routers.asphub_client.tls=true"
+        - "traefik.http.routers.asphub_client.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.asphub_client.service=asphub_client"
+        - "traefik.http.services.asphub_client.loadbalancer.server.port=80"
+    networks:
+      - proxy_traefik_proxy
+
+  server:
+    image: ${ASPHUB_SERVER_IMAGE}:${ASPHUB_SERVER_VERSION}
+    secrets:
+      - asphub_env
+    deploy:
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.role == worker
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 30s
+      update_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: rollback
+        monitor: 20s
+        max_failure_ratio: 0
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: "1024M"
+        reservations:
+          cpus: "0.50"
+          memory: "512M"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.asphub_server.rule=Host(`${DOMAIN}`) && PathPrefix(`/api`)"
+        - "traefik.http.routers.asphub_server.priority=20"
+        - "traefik.http.routers.asphub_server.entrypoints=websecure"
+        - "traefik.http.routers.asphub_server.tls=true"
+        - "traefik.http.routers.asphub_server.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.asphub_server.service=asphub_server"
+        - "traefik.http.services.asphub_server.loadbalancer.server.port=3000"
+    environment:
+      - NODE_ENV=production
+      - ENV_FILE=/run/secrets/asphub_env
+    networks:
+      - asphub_backend
+      - proxy_traefik_proxy
+
+secrets:
+  asphub_env:
+    external: true
+
+networks:
+  proxy_traefik_proxy:
+    external: true
+  asphub_backend:
+    external: true

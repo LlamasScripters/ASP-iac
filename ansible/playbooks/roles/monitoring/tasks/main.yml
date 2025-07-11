@@ -161,26 +161,12 @@
   ansible.builtin.shell:
     cmd: |
       set -o pipefail
-      for service in $(docker service ls --filter name=monitoring --format "{{ '{{.Name}}' }}"); do
-        docker service ps "$service" --filter "desired-state=running" --format "{{ '{{.Name}}' }} {{ '{{.CurrentState}}' }}"
-      done | grep -c "Running"
+      docker stack ps monitoring --format "{{  '{{.Name}} {{.CurrentState}}' }}" | grep -c "Running"
     executable: /bin/bash
   register: monitoring_services_running
-  until: monitoring_services_running.stdout | int >= 5
-  retries: 10
+  until: monitoring_services_running.stdout | int >= 9 # prometheus (1) + grafana (1) + node-exporter (3) + cadvisor (3) + alertmanager (1)
+  retries: 20
   delay: 5
-  changed_when: false
-
-- name: Verify all monitoring services are running
-  ansible.builtin.shell:
-    cmd: |
-      set -o pipefail
-      for service in $(docker service ls --filter name=monitoring --format "{{ '{{.Name}}' }}"); do
-        docker service ps "$service" --filter "desired-state=running" --format "{{ '{{.Name}}' }} {{ '{{.CurrentState}}' }}"
-      done
-    executable: /bin/bash
-  register: service_status
-  failed_when: service_status.stdout_lines | select('match', '.*Running.*') | list | length < 5
   changed_when: false
 
 - name: Display monitoring stack information

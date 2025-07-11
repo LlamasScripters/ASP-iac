@@ -1,0 +1,16 @@
+http:
+  middlewares:
+    fail2ban:
+      plugin:
+        fail2ban:
+          blacklist:
+            ip: 192.168.0.0/24
+          rules:
+            bantime: 3h
+            enabled: "true"
+            findtime: 10m
+            logencoding: UTF-8
+            maxretry: "4"
+            ports: 0:8000
+          whitelist:
+            ip: ::1,127.0.0.1,192.168.0.0/16

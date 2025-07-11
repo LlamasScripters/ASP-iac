@@ -54,4 +54,4 @@ backup_metrics_file: "/var/log/backup/metrics.json"
 
 # Plakar agent configuration
 plakar_agent_user: "{{ backup_user }}"
-plakar_agent_socket: "/opt/backup/plakar-agent.sock" 
+plakar_agent_socket: "/opt/backup/plakar-agent.sock"

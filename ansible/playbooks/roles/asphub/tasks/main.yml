@@ -58,10 +58,16 @@
     name: minio
     state: absent
 
-- name: Delete existing asphub Docker stack
+- name: Delete existing asphub Docker stacks
   community.docker.docker_stack:
-    name: asphub
+    name: "{{ item }}"
     state: absent
+  loop:
+    - asphub_application
+    - asphub_init_db
+    - asphub_storage
+    - asphub_database
+    - asphub
 
 - name: Create database config Docker Config
   community.docker.docker_config:
@@ -110,12 +116,93 @@
     labels:
       ansible_key: "{{ asphub_env_hash }}"
 
-- name: Deploy asphub
+- name: Create asphub backend network
+  community.docker.docker_network:
+    name: asphub_backend
+    driver: overlay
+    scope: swarm
+
+- name: Deploy asphub database stack
   community.docker.docker_stack:
-    name: asphub
+    name: asphub_database
     state: present
     detach: true
-    compose: /app/asphub/compose.yml
+    compose: /app/asphub/compose-database.yml
+    with_registry_auth: true
+  environment:
+    POSTGRES_IMAGE: "{{ asphub_postgres_image }}"
+    POSTGRES_VERSION: "{{ asphub_postgres_version }}"
+
+- name: Wait for database to be ready
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      docker service ls --filter name=asphub_database_postgres --format "{{ '{{.Replicas}}' }}" | grep -c "1/1"
+    executable: /bin/bash
+  register: database_ready
+  until: database_ready.stdout | int == 1
+  retries: 10
+  delay: 5
+  changed_when: false
+
+- name: Deploy asphub storage stack
+  community.docker.docker_stack:
+    name: asphub_storage
+    state: present
+    detach: true
+    compose: /app/asphub/compose-storage.yml
+    with_registry_auth: true
+  environment:
+    MINIO_IMAGE: "{{ asphub_minio_image }}"
+    MINIO_VERSION: "{{ asphub_minio_version }}"
+
+- name: Wait for storage to be ready
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      docker service ls --filter name=asphub_storage_minio --format "{{ '{{.Replicas}}' }}" | grep -c "1/1"
+    executable: /bin/bash
+  register: storage_ready
+  until: storage_ready.stdout | int == 1
+  retries: 10
+  delay: 5
+  changed_when: false
+
+- name: Deploy asphub init-db service
+  community.docker.docker_stack:
+    name: asphub_init_db
+    state: present
+    detach: true
+    compose: /app/asphub/compose-init-db.yml
+    with_registry_auth: true
+  environment:
+    ASPHUB_SERVER_IMAGE: "{{ asphub_server_image }}"
+    ASPHUB_SERVER_VERSION: "{{ asphub_server_version }}"
+    DATABASE_URL: "{{ asphub_env_vars.DATABASE_URL }}"
+
+- name: Wait for init-db to complete
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      docker service ps asphub_init_db_init-db --format "{{ '{{.CurrentState}}' }}" | grep -c "Complete"
+    executable: /bin/bash
+  register: init_db_state_result
+  until: init_db_state_result.stdout | int >= 1
+  retries: 20 # Higher retries count to reduce migration time
+  delay: 1
+  changed_when: false
+
+- name: Remove init-db stack after completion
+  community.docker.docker_stack:
+    name: asphub_init_db
+    state: absent
+
+- name: Deploy asphub application stack
+  community.docker.docker_stack:
+    name: asphub_application
+    state: present
+    detach: true
+    compose: /app/asphub/compose-application.yml
     with_registry_auth: true
   environment:
     DOMAIN: "{{ domain }}"
@@ -123,83 +210,24 @@
     ASPHUB_CLIENT_VERSION: "{{ asphub_client_version }}"
     ASPHUB_SERVER_IMAGE: "{{ asphub_server_image }}"
     ASPHUB_SERVER_VERSION: "{{ asphub_server_version }}"
-    POSTGRES_IMAGE: "{{ asphub_postgres_image }}"
-    POSTGRES_VERSION: "{{ asphub_postgres_version }}"
-    MINIO_IMAGE: "{{ asphub_minio_image }}"
-    MINIO_VERSION: "{{ asphub_minio_version }}"
 
-- name: Wait for asphub stack services to be ready
+- name: Wait for application stack services to be ready
   ansible.builtin.shell:
     cmd: |
       set -o pipefail
-      docker service ls --filter name=asphub --format "table {{ '{{.Name}}' }}\t{{ '{{.Replicas}}' }}\t{{ '{{.Mode}}' }}" | grep -v "0/"
+      docker stack ps asphub_application --format {{  '{{.CurrentState}}' }} | grep -c "Running"
     executable: /bin/bash
-  register: asphub_services
-  until: asphub_services.stdout_lines | length >= 4
-  retries: 5
-  delay: 3
+  register: asphub_application_services
+  until: asphub_application_services.stdout | int == 2
+  retries: 20 # Higher retries count to reduce time
+  delay: 1
   changed_when: false
 
-- name: Verify all asphub services are converged
-  ansible.builtin.shell:
-    cmd: |
-      set -o pipefail
-      docker service ls --filter name=asphub --format "{{ '{{.Name}}' }} {{ '{{.Replicas}}' }}" | grep -v "0/"
-    executable: /bin/bash
-  register: asphub_service_status
-  failed_when: asphub_service_status.stdout_lines | length < 4
-  changed_when: false
-
-- name: Find node with asphub server container
-  ansible.builtin.shell:
-    cmd: |
-      set -o pipefail
-      docker service ps asphub_server --format {{ '{{.Node}}' }} --filter "desired-state=running" | head -1
-    executable: /bin/bash
-  retries: 3
-  delay: 5
-  until: server_node_result.rc == 0
-  register: server_node_result
-  changed_when: true
-
-- name: Show server node result
-  ansible.builtin.debug:
-    msg: "Server node result: {{ server_node_result }}"
-
-- name: Set server node fact
-  ansible.builtin.set_fact:
-    server_node: "{{ server_node_result.stdout.strip() }}"
-
-- name: Show server node
-  ansible.builtin.debug:
-    msg: "AspHub server is running on node: {{ server_node }}"
-
-- name: Execute database migration via new attached service
-  community.docker.docker_swarm_service:
-    name: init-db
-  register: migration_result
-  delegate_to: "{{ server_node }}"
-  changed_when: true
-
-- name: Show migration result
+- name: Show deployment success
   ansible.builtin.debug:
     msg: |
-      {% if migration_result.rc == 0 %}
-      ✅ Database migration completed successfully
-      {% if migration_result.stdout %}
-      Output: {{ migration_result.stdout }}
-      {% endif %}
-      {% else %}
-      ❌ Database migration failed (exit code: {{ migration_result.rc }})
-      {% if migration_result.stdout %}
-      Output: {{ migration_result.stdout }}
-      {% endif %}
-      {% if migration_result.stderr %}
-      Error: {{ migration_result.stderr }}
-      {% endif %}
-      {% endif %}
-
-- name: Fail if migration failed
-  ansible.builtin.fail:
-    msg: "Database migration failed with exit code {{ migration_result.rc }}"
-  when: migration_result.rc != 0
+      ✅ AspHub deployment completed successfully
+      - Database stack: asphub_database
+      - Storage stack: asphub_storage
+      - Application stack: asphub_application
+      - Database migrations: Completed via init-db service

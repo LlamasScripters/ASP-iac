@@ -1,0 +1,45 @@
+services:
+  minio:
+    image: ${MINIO_IMAGE}:${MINIO_VERSION}
+    volumes:
+      - minio_data:/data/minio
+    command: "minio server /data/minio"
+    secrets:
+      - minio_user
+      - minio_password
+    environment:
+      - MINIO_ROOT_USER_FILE=/run/secrets/minio_user
+      - MINIO_ROOT_PASSWORD_FILE=/run/secrets/minio_password
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - asphub_backend
+    deploy:
+      replicas: 1
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.role == worker
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: "512M"
+        reservations:
+          cpus: "0.25"
+          memory: "256M"
+
+secrets:
+  minio_user:
+    external: true
+  minio_password:
+    external: true
+
+volumes:
+  minio_data:
+
+networks:
+  asphub_backend:
+    external: true

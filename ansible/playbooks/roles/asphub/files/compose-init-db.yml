@@ -1,0 +1,32 @@
+services:
+  init-db:
+    image: ${ASPHUB_SERVER_IMAGE}:${ASPHUB_SERVER_VERSION}
+    volumes:
+      - migrations:/app/migrations/production:ro
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+    command: ["npx", "drizzle-kit", "migrate"]
+    deploy:
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.role == worker
+      restart_policy:
+        condition: none
+      update_config:
+        order: stop-first
+        failure_action: pause
+    networks:
+      - asphub_backend
+
+secrets:
+  asphub_env:
+    external: true
+
+volumes:
+  migrations:
+
+networks:
+  asphub_backend:
+    external: true

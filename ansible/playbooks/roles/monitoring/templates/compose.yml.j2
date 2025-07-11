@@ -92,17 +92,18 @@ services:
     image: prom/node-exporter:${NODE_EXPORTER_VERSION}
     command:
       - '--path.rootfs=/host'
+      - '--collector.disable-defaults'
+      - '--collector.cpu'
+      - '--collector.diskstats'
+      - '--collector.filesystem'
+      - '--collector.loadavg'
+      - '--collector.meminfo'
+      - '--collector.netdev'
+      - '--collector.stat'
+      - '--collector.time'
+      - '--collector.uname'
+      - '--collector.vmstat'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-      - '--collector.disable=thermal_zone'
-      - '--collector.disable=hwmon'
-      - '--collector.disable=powersupplyclass'
-      - '--collector.disable=infiniband'
-      - '--collector.disable=xfs'
-      - '--collector.disable=zfs'
-      - '--collector.disable=edac'
-      - '--collector.disable=wifi'
-      - '--collector.disable=tapestats'
-      - '--collector.disable=nfsd'
       - '--web.listen-address=0.0.0.0:9100'
     volumes:
       - /:/host:ro,rslave

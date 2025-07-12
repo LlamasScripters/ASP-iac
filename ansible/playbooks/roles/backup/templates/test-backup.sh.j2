@@ -1,0 +1,112 @@
+#!/bin/bash
+
+# Script de test pour la solution de backup ASPHub 3-2-1
+# Ce script vérifie que tous les composants sont en place
+
+set -e
+
+echo "🧪 Test de la solution de backup ASPHub 3-2-1"
+echo "=============================================="
+
+# Vérification 1: Conteneur de backup
+echo "1. Vérification du conteneur de backup..."
+if docker ps --format "table {{.Names}}" | grep -q "asphub_backup"; then
+    echo "✅ Conteneur asphub_backup en cours d'exécution"
+else
+    echo "❌ Conteneur asphub_backup non trouvé"
+    exit 1
+fi
+
+# Vérification 2: Volumes
+echo "2. Vérification des volumes..."
+POSTGRES_VOL=$(docker volume ls | grep postgres_data | wc -l)
+MINIO_VOL=$(docker volume ls | grep minio_data | wc -l)
+BACKUP_VOL=$(docker volume ls | grep backup_data | wc -l)
+
+if [[ $POSTGRES_VOL -eq 1 ]]; then
+    echo "✅ Volume postgres_data présent"
+else
+    echo "❌ Volume postgres_data manquant"
+fi
+
+if [[ $MINIO_VOL -eq 1 ]]; then
+    echo "✅ Volume minio_data présent"
+else
+    echo "❌ Volume minio_data manquant"
+fi
+
+if [[ $BACKUP_VOL -eq 1 ]]; then
+    echo "✅ Volume backup_data présent"
+else
+    echo "❌ Volume backup_data manquant"
+fi
+
+# Vérification 3: Configuration
+echo "3. Vérification de la configuration..."
+if [[ -f "/opt/backup/.env" ]]; then
+    echo "✅ Fichier de configuration présent"
+else
+    echo "❌ Fichier de configuration manquant"
+    exit 1
+fi
+
+# Vérification 4: Scripts de gestion
+echo "4. Vérification des scripts de gestion..."
+SCRIPTS=(
+    "/opt/backup/scripts/backup-now.sh"
+    "/opt/backup/scripts/backup-status.sh"
+    "/opt/backup/scripts/restore-script.sh"
+)
+
+for script in "${SCRIPTS[@]}"; do
+    if [[ -f "$script" && -x "$script" ]]; then
+        echo "✅ Script $(basename $script) présent et exécutable"
+    else
+        echo "❌ Script $(basename $script) manquant ou non exécutable"
+    fi
+done
+
+# Vérification 5: Plakar dans le conteneur
+echo "5. Vérification de Plakar dans le conteneur..."
+if docker exec asphub_backup plakar version >/dev/null 2>&1; then
+    PLAKAR_VERSION=$(docker exec asphub_backup plakar version)
+    echo "✅ Plakar disponible: $PLAKAR_VERSION"
+else
+    echo "❌ Plakar non disponible dans le conteneur"
+    exit 1
+fi
+
+# Vérification 6: Repositories configurés
+echo "6. Vérification des repositories..."
+echo "   📁 Local: /backup/storage/local"
+echo "   🌐 SFTP: {{ vault_backup_sftp_user }}@{{ vault_backup_sftp_host }}{{ vault_backup_sftp_path }}"
+echo "   ☁️  S3: {{ vault_backup_s3_region }}.amazonaws.com/{{ vault_backup_s3_bucket }}"
+
+# Vérification 7: Cron dans le conteneur
+echo "7. Vérification du cron..."
+if docker exec asphub_backup crontab -l | grep -q "backup-script.sh"; then
+    echo "✅ Cron job configuré"
+    docker exec asphub_backup crontab -l
+else
+    echo "❌ Cron job non configuré"
+fi
+
+# Test de backup simple (optionnel)
+echo "8. Test de backup simple..."
+echo "   Pour tester un backup manuel, exécutez:"
+echo "   /opt/backup/scripts/backup-now.sh"
+
+echo ""
+echo "🎉 Vérification terminée!"
+echo ""
+echo "📋 Résumé de la configuration:"
+echo "   - Stratégie: 3-2-1 (3 copies, 2 supports, 1 externe)"
+echo "   - Fréquence: Quotidien à 2h00"
+echo "   - Rétention: {{ backup_retention_days }} jours"
+echo "   - Volumes sauvegardés: postgres_data, minio_data"
+echo ""
+echo "🔧 Commandes utiles:"
+echo "   - Status: /opt/backup/scripts/backup-status.sh"
+echo "   - Backup manuel: /opt/backup/scripts/backup-now.sh"
+echo "   - Restore: /opt/backup/scripts/restore-script.sh"
+echo "   - Logs: docker logs asphub_backup" 

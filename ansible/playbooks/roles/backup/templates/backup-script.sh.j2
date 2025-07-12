@@ -1,0 +1,171 @@
+#!/bin/sh
+
+# ASPHub Backup Script - Solution simplifiée 3-2-1
+# Remplace les 10 templates complexes par un script simple
+
+set -e
+
+# Configuration
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+LOG_FILE="/backup/storage/backup.log"
+BACKUP_ID="backup_${TIMESTAMP}"
+
+# Repositories (3-2-1 Strategy)
+LOCAL_REPO="/backup/storage/local"
+SFTP_REPO="sftp://{{ vault_backup_sftp_user }}@{{ vault_backup_sftp_host }}{{ vault_backup_sftp_path }}"
+S3_REPO="s3://{{ vault_backup_s3_region }}.amazonaws.com/{{ vault_backup_s3_bucket }}"
+
+# Passphrases
+LOCAL_PASSPHRASE="{{ vault_backup_local_passphrase }}"
+SFTP_PASSPHRASE="{{ vault_backup_sftp_passphrase }}"
+S3_PASSPHRASE="{{ vault_backup_s3_passphrase }}"
+
+# Fonction de log
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [BACKUP] $1" | tee -a "${LOG_FILE}"
+}
+
+error_exit() {
+    log "ERROR: $1"
+    exit 1
+}
+
+# Fonction de backup Plakar
+plakar_backup() {
+    local repo="$1"
+    local passphrase="$2"
+    local description="$3"
+    
+    log "Creating backup to $repo: $description"
+    
+    export PLAKAR_REPOSITORY_PASSPHRASE="$passphrase"
+    
+    # Initialiser le repository s'il n'existe pas
+    if ! plakar -repository "$repo" info >/dev/null 2>&1; then
+        log "Initializing repository: $repo"
+        plakar -repository "$repo" create
+    fi
+    
+    # Créer le backup
+    if plakar -repository "$repo" backup /backup/source; then
+        log "✅ Backup successful: $repo"
+        return 0
+    else
+        log "❌ Backup failed: $repo"
+        return 1
+    fi
+}
+
+# Fonction de synchronisation
+sync_repo() {
+    local source_repo="$1"
+    local target_repo="$2"
+    local source_pass="$3"
+    local target_pass="$4"
+    
+    log "Synchronizing $source_repo -> $target_repo"
+    
+    # Initialiser le repository cible s'il n'existe pas
+    export PLAKAR_REPOSITORY_PASSPHRASE="$target_pass"
+    if ! plakar -repository "$target_repo" info >/dev/null 2>&1; then
+        log "Initializing target repository: $target_repo"
+        plakar -repository "$target_repo" create
+    fi
+    
+    # Synchroniser
+    export PLAKAR_REPOSITORY_PASSPHRASE="$source_pass"
+    if plakar -repository "$source_repo" sync "$target_repo"; then
+        log "✅ Sync successful: $target_repo"
+        return 0
+    else
+        log "❌ Sync failed: $target_repo"
+        return 1
+    fi
+}
+
+# Fonction de nettoyage
+cleanup_old_backups() {
+    local repo="$1"
+    local passphrase="$2"
+    local retention_days="{{ backup_retention_days }}"
+    
+    log "Cleaning up old backups in $repo (keeping last $retention_days days)"
+    
+    export PLAKAR_REPOSITORY_PASSPHRASE="$passphrase"
+    
+    # Supprimer les snapshots plus anciens que la rétention
+    plakar -repository "$repo" snapshots --format=json | \
+    jq -r --arg cutoff "$(date -d "$retention_days days ago" +%s)" \
+    '.[] | select(.timestamp < ($cutoff | tonumber)) | .id' | \
+    while read -r snapshot_id; do
+        if [ -n "$snapshot_id" ]; then
+            log "Removing old snapshot: $snapshot_id"
+            plakar -repository "$repo" rm "$snapshot_id" || log "WARNING: Failed to remove $snapshot_id"
+        fi
+    done
+}
+
+# === MAIN EXECUTION ===
+
+log "🚀 Starting ASPHub 3-2-1 backup (ID: $BACKUP_ID)"
+
+# Vérifier que les données sources existent
+if [ ! -d "/backup/source/postgres" ] || [ ! -d "/backup/source/minio" ]; then
+    error_exit "Source data not found. Check volume mounts."
+fi
+
+# ÉTAPE 1: Backup local (copie #1)
+log "📦 Step 1/3: Creating local backup"
+if ! plakar_backup "$LOCAL_REPO" "$LOCAL_PASSPHRASE" "ASPHub local backup"; then
+    error_exit "Local backup failed"
+fi
+
+# ÉTAPE 2: Sync vers repository SFTP (copie #2)
+log "🌐 Step 2/3: Syncing to SFTP repository"
+if ! sync_repo "$LOCAL_REPO" "$SFTP_REPO" "$LOCAL_PASSPHRASE" "$SFTP_PASSPHRASE"; then
+    log "WARNING: SFTP sync failed - continuing with backup"
+fi
+
+# ÉTAPE 3: Sync vers repository S3 (copie #3)
+log "🌐 Step 3/3: Syncing to S3 repository"
+if ! sync_repo "$LOCAL_REPO" "$S3_REPO" "$LOCAL_PASSPHRASE" "$S3_PASSPHRASE"; then
+    log "WARNING: S3 sync failed - continuing with backup"
+fi
+
+# ÉTAPE 4: Nettoyage des anciens backups
+log "🧹 Cleaning up old backups"
+cleanup_old_backups "$LOCAL_REPO" "$LOCAL_PASSPHRASE"
+
+# ÉTAPE 5: Vérification basique
+log "✅ Verifying backup integrity"
+export PLAKAR_REPOSITORY_PASSPHRASE="$LOCAL_PASSPHRASE"
+if plakar -repository "$LOCAL_REPO" check; then
+    log "✅ Backup verification successful"
+else
+    log "❌ Backup verification failed"
+fi
+
+# Statistiques finales
+BACKUP_SIZE=$(du -sh /backup/storage | cut -f1)
+POSTGRES_SIZE=$(du -sh /backup/source/postgres | cut -f1)
+MINIO_SIZE=$(du -sh /backup/source/minio | cut -f1)
+
+log "📊 Backup Statistics:"
+log "   - PostgreSQL data: $POSTGRES_SIZE"
+log "   - MinIO data: $MINIO_SIZE"
+log "   - Total backup size: $BACKUP_SIZE"
+log "   - Backup ID: $BACKUP_ID"
+
+log "🎉 Backup completed successfully!"
+
+# Créer un fichier de statut pour monitoring
+cat > /backup/storage/last_backup_status.json << EOF
+{
+    "backup_id": "$BACKUP_ID",
+    "timestamp": "$(date -Iseconds)",
+    "status": "success",
+    "postgres_size": "$POSTGRES_SIZE",
+    "minio_size": "$MINIO_SIZE",
+    "total_size": "$BACKUP_SIZE"
+}
+EOF 

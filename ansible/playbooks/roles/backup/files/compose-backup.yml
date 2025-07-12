@@ -1,0 +1,54 @@
+services:
+  backup:
+    build:
+      context: /opt/backup
+      dockerfile: Dockerfile
+    image: asphub/backup:latest
+    container_name: asphub_backup
+    volumes:
+      # Volumes à sauvegarder (lecture seule)
+      - postgres_data:/backup/source/postgres:ro
+      - minio_data:/backup/source/minio:ro
+      # Volume pour stocker les backups locaux
+      - backup_data:/backup/storage
+      # Configuration
+      - /opt/backup/.env:/backup/.env:ro
+    environment:
+      - PLAKAR_REPOSITORY_PATH=/backup/storage/local
+      - PLAKAR_LOG_LEVEL=info
+    networks:
+      - asphub_backend
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "512M"
+        reservations:
+          cpus: "0.25"
+          memory: "256M"
+    # Lancer le conteneur avec cron pour backup quotidien
+    command: |
+      sh -c "
+        # Copier la configuration
+        source /backup/.env
+        
+        # Créer le cronjob pour backup quotidien à 2h du matin
+        echo '0 2 * * * /backup-script.sh' | crontab -
+        
+        # Lancer crond en avant-plan
+        crond -f
+      "
+
+volumes:
+  postgres_data:
+    external: true
+  minio_data:
+    external: true
+  backup_data:
+
+networks:
+  asphub_backend:
+    external: true 

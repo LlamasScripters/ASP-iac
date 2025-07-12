@@ -1,14 +1,10 @@
 ---
-- name: reload systemd
-  ansible.builtin.systemd:
-    daemon_reload: true
+# Handlers pour la solution de backup simplifiée
 
-- name: restart plakar-agent
-  ansible.builtin.systemd:
-    name: plakar-agent
-    state: restarted
-
-- name: restart backup-timer
-  ansible.builtin.systemd:
-    name: backup.timer
-    state: restarted 
+- name: restart backup stack
+  community.docker.docker_stack:
+    name: asphub_backup
+    state: present
+    detach: true
+    compose: /opt/backup/compose-backup.yml
+    with_registry_auth: true 

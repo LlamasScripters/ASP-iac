@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Script pour déclencher un backup manuel
+# Utilise le conteneur de backup existant
+
+set -e
+
+echo "🚀 Triggering manual backup..."
+
+# Vérifier que le conteneur existe
+if ! docker ps --format "table {{.Names}}" | grep -q "asphub_backup"; then
+    echo "❌ Backup container not found. Is the backup stack deployed?"
+    exit 1
+fi
+
+# Exécuter le script de backup dans le conteneur
+echo "📦 Running backup script in container..."
+docker exec asphub_backup /backup-script.sh
+
+echo "✅ Manual backup completed!"
+echo "📊 Check logs: docker logs asphub_backup"
+echo "📁 Check status: /opt/backup/scripts/backup-status.sh"

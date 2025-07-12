@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# Script pour vérifier le statut des backups
+# Affiche l'état du conteneur et des derniers backups
+
+set -e
+
+echo "📊 ASPHub Backup Status"
+echo "======================"
+
+# Vérifier l'état du conteneur
+echo "🐳 Container Status:"
+if docker ps --format "table {{.Names}}\t{{.Status}}" | grep -q "asphub_backup"; then
+    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep "asphub_backup"
+    echo "✅ Backup container is running"
+else
+    echo "❌ Backup container is not running"
+    exit 1
+fi
+
+echo ""
+
+# Vérifier les volumes
+echo "💾 Volume Status:"
+echo "- postgres_data: $(docker volume ls | grep postgres_data | awk '{print $2}')"
+echo "- minio_data: $(docker volume ls | grep minio_data | awk '{print $2}')"
+echo "- backup_data: $(docker volume ls | grep backup_data | awk '{print $2}')"
+
+echo ""
+
+# Afficher les derniers logs du conteneur
+echo "📝 Recent Logs (last 10 lines):"
+docker logs --tail 10 asphub_backup
+
+echo ""
+
+# Vérifier le statut du dernier backup s'il existe
+echo "📈 Last Backup Status:"
+if docker exec asphub_backup test -f /backup/storage/last_backup_status.json; then
+    echo "Last backup information:"
+    docker exec asphub_backup cat /backup/storage/last_backup_status.json | jq -r '
+        "  📅 Date: " + .timestamp + 
+        "\n  🆔 ID: " + .backup_id + 
+        "\n  📊 Status: " + .status + 
+        "\n  💾 PostgreSQL: " + .postgres_size + 
+        "\n  📁 MinIO: " + .minio_size + 
+        "\n  📦 Total: " + .total_size'
+else
+    echo "No backup status file found. Run a backup first."
+fi
+
+echo ""
+
+# Lister les snapshots disponibles
+echo "📦 Available Snapshots:"
+if docker exec asphub_backup plakar -repository /backup/storage/local snapshots 2>/dev/null; then
+    echo "✅ Snapshots listed above"
+else
+    echo "❌ No snapshots found or repository not initialized"
+fi
+
+echo ""
+echo "🔧 Management Commands:"
+echo "- Manual backup: /opt/backup/scripts/backup-now.sh"
+echo "- Restore data: /opt/backup/scripts/restore-script.sh"
+echo "- Container logs: docker logs asphub_backup"
+echo "- Container shell: docker exec -it asphub_backup /bin/sh" 

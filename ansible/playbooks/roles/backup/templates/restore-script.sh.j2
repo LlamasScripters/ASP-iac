@@ -1,0 +1,141 @@
+#!/bin/sh
+
+# ASPHub Restore Script - Solution simplifiée
+# Restaure les données depuis un backup Plakar
+
+set -e
+
+# Configuration
+RESTORE_DIR="/backup/restore"
+LOCAL_REPO="/backup/storage/local"
+LOCAL_PASSPHRASE="{{ vault_backup_local_passphrase }}"
+LOG_FILE="/backup/storage/restore.log"
+
+# Fonction de log
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [RESTORE] $1" | tee -a "${LOG_FILE}"
+}
+
+error_exit() {
+    log "ERROR: $1"
+    exit 1
+}
+
+# Fonction d'aide
+usage() {
+    echo "Usage: $0 [snapshot_id]"
+    echo "  snapshot_id: ID du snapshot à restaurer (optionnel, prend le dernier si non spécifié)"
+    echo ""
+    echo "Exemples:"
+    echo "  $0                    # Restaure le dernier backup"
+    echo "  $0 abc123def456       # Restaure le snapshot spécifique"
+    echo ""
+    echo "Pour lister les snapshots disponibles:"
+    echo "  docker exec asphub_backup plakar -repository /backup/storage/local snapshots"
+    exit 1
+}
+
+# Fonction pour lister les snapshots
+list_snapshots() {
+    log "📋 Available snapshots:"
+    export PLAKAR_REPOSITORY_PASSPHRASE="$LOCAL_PASSPHRASE"
+    plakar -repository "$LOCAL_REPO" snapshots --format=table
+}
+
+# Fonction pour obtenir le dernier snapshot
+get_latest_snapshot() {
+    export PLAKAR_REPOSITORY_PASSPHRASE="$LOCAL_PASSPHRASE"
+    plakar -repository "$LOCAL_REPO" snapshots --format=json | jq -r '.[0].id' 2>/dev/null || echo ""
+}
+
+# Fonction de restauration
+restore_snapshot() {
+    local snapshot_id="$1"
+    
+    log "🔄 Starting restore of snapshot: $snapshot_id"
+    
+    # Créer le répertoire de restauration
+    mkdir -p "$RESTORE_DIR"
+    rm -rf "$RESTORE_DIR"/*
+    
+    # Restaurer le snapshot
+    export PLAKAR_REPOSITORY_PASSPHRASE="$LOCAL_PASSPHRASE"
+    if plakar -repository "$LOCAL_REPO" restore "$snapshot_id" "$RESTORE_DIR"; then
+        log "✅ Restore successful to: $RESTORE_DIR"
+        
+        # Afficher le contenu restauré
+        log "📦 Restored content:"
+        ls -la "$RESTORE_DIR"
+        
+        # Statistiques
+        POSTGRES_SIZE=$(du -sh "$RESTORE_DIR/postgres" 2>/dev/null | cut -f1 || echo "N/A")
+        MINIO_SIZE=$(du -sh "$RESTORE_DIR/minio" 2>/dev/null | cut -f1 || echo "N/A")
+        TOTAL_SIZE=$(du -sh "$RESTORE_DIR" | cut -f1)
+        
+        log "📊 Restored data:"
+        log "   - PostgreSQL: $POSTGRES_SIZE"
+        log "   - MinIO: $MINIO_SIZE"
+        log "   - Total: $TOTAL_SIZE"
+        
+        log "🎉 Restore completed successfully!"
+        log "📁 Data restored to: $RESTORE_DIR"
+        log ""
+        log "🔧 Next steps:"
+        log "   1. Stop the application services"
+        log "   2. Replace the data volumes with restored data"
+        log "   3. Restart the application services"
+        log ""
+        log "⚠️  IMPORTANT: Manual intervention required to apply the restored data"
+        
+        return 0
+    else
+        error_exit "Restore failed for snapshot: $snapshot_id"
+    fi
+}
+
+# === MAIN EXECUTION ===
+
+log "🚀 Starting ASPHub restore process"
+
+# Vérifier que le repository existe
+if [ ! -d "$LOCAL_REPO" ]; then
+    error_exit "Local backup repository not found: $LOCAL_REPO"
+fi
+
+# Traiter les arguments
+case "${1:-}" in
+    -h|--help)
+        usage
+        ;;
+    -l|--list)
+        list_snapshots
+        exit 0
+        ;;
+    "")
+        # Pas d'argument, prendre le dernier snapshot
+        SNAPSHOT_ID=$(get_latest_snapshot)
+        if [ -z "$SNAPSHOT_ID" ]; then
+            error_exit "No snapshots found in repository"
+        fi
+        log "📅 Using latest snapshot: $SNAPSHOT_ID"
+        ;;
+    *)
+        # Snapshot ID spécifié
+        SNAPSHOT_ID="$1"
+        log "📅 Using specified snapshot: $SNAPSHOT_ID"
+        ;;
+esac
+
+# Vérifier que le snapshot existe
+export PLAKAR_REPOSITORY_PASSPHRASE="$LOCAL_PASSPHRASE"
+if ! plakar -repository "$LOCAL_REPO" show "$SNAPSHOT_ID" >/dev/null 2>&1; then
+    error_exit "Snapshot not found: $SNAPSHOT_ID"
+fi
+
+# Confirmer la restauration
+log "⚠️  WARNING: This will restore data from backup snapshot: $SNAPSHOT_ID"
+log "📅 Snapshot details:"
+plakar -repository "$LOCAL_REPO" show "$SNAPSHOT_ID"
+
+# Effectuer la restauration
+restore_snapshot "$SNAPSHOT_ID" 

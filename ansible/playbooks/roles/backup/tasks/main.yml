@@ -22,7 +22,7 @@
   ansible.builtin.template:
     src: backup-env.j2
     dest: /opt/backup/.env
-    mode: '0600'
+    mode: '0644'
     owner: root
     group: root
 
@@ -30,6 +30,14 @@
   ansible.builtin.template:
     src: backup-script.sh.j2
     dest: /opt/backup/scripts/backup-script.sh
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Create hybrid backup script (alternative to avoid Plakar freeze)
+  ansible.builtin.template:
+    src: backup-s3-hybrid.sh.j2
+    dest: /opt/backup/scripts/backup-s3-hybrid.sh
     mode: '0755'
     owner: root
     group: root
@@ -52,7 +60,7 @@
 
 - name: Copy backup script for Docker build
   ansible.builtin.copy:
-    src: /opt/backup/scripts/backup-script.sh
+    src: "/opt/backup/scripts/{{ backup_script }}"
     dest: /opt/backup/backup-script.sh
     mode: '0755'
     owner: root
@@ -74,6 +82,9 @@
     # detach: true
     compose: /opt/backup/compose-backup.yml
     with_registry_auth: true
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ vault_backup_s3_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ vault_backup_s3_secret_key }}"
 
 - name: Wait for backup service to be ready
   ansible.builtin.shell:

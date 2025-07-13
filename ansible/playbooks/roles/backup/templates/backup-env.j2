@@ -10,14 +10,22 @@ BACKUP_SFTP_REPO=sftp://{{ vault_backup_sftp_user }}@{{ vault_backup_sftp_host }
 BACKUP_SFTP_PASSPHRASE={{ vault_backup_sftp_passphrase }}
 
 # Repository S3 (copie #3) - Support externe
-BACKUP_S3_REPO=s3://{{ vault_backup_s3_region }}.amazonaws.com/{{ vault_backup_s3_bucket }}
+BACKUP_S3_REPO=s3://{{ vault_backup_s3_bucket }}
 BACKUP_S3_PASSPHRASE={{ vault_backup_s3_passphrase }}
 AWS_ACCESS_KEY_ID={{ vault_backup_s3_access_key }}
 AWS_SECRET_ACCESS_KEY={{ vault_backup_s3_secret_key }}
+AWS_DEFAULT_REGION={{ vault_backup_s3_region }}
 
 # Configuration générale
 BACKUP_RETENTION_DAYS={{ backup_retention_days }}
 BACKUP_SCHEDULE="0 2 * * *"  # Quotidien à 2h du matin
+
+# PostgreSQL Configuration
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+POSTGRES_USER=postgres
+POSTGRES_DB=asphub
+POSTGRES_PASSWORD={{ vault_postgres_password }}
 
 # Logging
 LOG_LEVEL=info 

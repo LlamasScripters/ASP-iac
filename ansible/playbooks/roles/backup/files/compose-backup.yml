@@ -3,12 +3,14 @@ services:
     build:
       context: /opt/backup
       dockerfile: Dockerfile
+      args:
+        - REBUILD_CACHE=${REBUILD_CACHE:-$(date +%s)}
     image: asphub/backup:latest
     container_name: asphub_backup
     volumes:
-      # Volumes à sauvegarder (lecture seule)
-      - postgres_data:/backup/source/postgres:ro
-      - minio_data:/backup/source/minio:ro
+      # Volumes à sauvegarder (lecture seule) - NOMS CORRECTS
+      - asphub_database_postgres_data:/backup/source/postgres:ro
+      - asphub_storage_minio_data:/backup/source/minio:ro
       # Volume pour stocker les backups locaux
       - backup_data:/backup/storage
       # Configuration
@@ -32,20 +34,23 @@ services:
     # Lancer le conteneur avec cron pour backup quotidien
     command: |
       sh -c "
-        # Copier la configuration
-        source /backup/.env
+        # Exporter les variables d'environnement depuis le fichier .env
+        set -a
+        . /backup/.env
+        set +a
         
-        # Créer le cronjob pour backup quotidien à 2h du matin
-        echo '0 2 * * * /backup-script.sh' | crontab -
+        # Créer le cronjob pour backup quotidien à 2h du matin (avec variables env)
+        echo '0 2 * * * . /backup/.env && /backup-script.sh' | crontab -
         
         # Lancer crond en avant-plan
         crond -f
       "
 
 volumes:
-  postgres_data:
+  # Volumes externes avec les vrais noms
+  asphub_database_postgres_data:
     external: true
-  minio_data:
+  asphub_storage_minio_data:
     external: true
   backup_data:
 

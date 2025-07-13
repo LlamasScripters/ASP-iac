@@ -1,0 +1,258 @@
+#!/bin/sh
+
+# ASPHub Backup Script - Solution Hybride S3 (évite les problèmes de Plakar)
+# Backup direct avec tar.gz + upload S3 + retention policy
+
+set -e
+
+# Charger les variables d'environnement depuis le fichier .env
+if [ -f /backup/.env ]; then
+    set -a
+    . /backup/.env
+    set +a
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [HYBRID-BACKUP] ✅ Environment variables loaded from .env"
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [HYBRID-BACKUP] ⚠️ WARNING: .env file not found"
+fi
+
+# Configuration
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+LOG_FILE="/backup/storage/backup.log"
+BACKUP_ID="backup_${TIMESTAMP}"
+DUMP_DIR="/backup/dumps"
+TEMP_DIR="/tmp"
+
+# S3 Configuration
+S3_BUCKET="{{ vault_backup_s3_bucket }}"
+S3_PREFIX="asphub-backups"
+POSTGRES_ARCHIVE="postgres_${TIMESTAMP}.tar.gz"
+MINIO_ARCHIVE="minio_${TIMESTAMP}.tar.gz"
+DUMPS_ARCHIVE="dumps_${TIMESTAMP}.tar.gz"
+
+# Fonction de log
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [HYBRID-BACKUP] $1" | tee -a "${LOG_FILE}"
+}
+
+error_exit() {
+    log "ERROR: $1"
+    exit 1
+}
+
+# Fonction pour créer un dump PostgreSQL
+create_postgres_dump() {
+    log "🗄️ Creating PostgreSQL dump..."
+    
+    # Créer le répertoire de dumps
+    mkdir -p "$DUMP_DIR"
+    
+    # Vérifier que les variables d'environnement PostgreSQL sont définies
+    if [ -z "$POSTGRES_HOST" ] || [ -z "$POSTGRES_USER" ] || [ -z "$POSTGRES_DB" ] || [ -z "$POSTGRES_PASSWORD" ]; then
+        log "❌ ERROR: PostgreSQL environment variables not set"
+        return 1
+    fi
+    
+    # Tester la connexion PostgreSQL
+    log "🔍 Testing PostgreSQL connection to $POSTGRES_HOST:$POSTGRES_PORT..."
+    export PGPASSWORD="$POSTGRES_PASSWORD"
+    
+    if ! pg_isready -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB"; then
+        log "❌ ERROR: PostgreSQL not ready or connection failed"
+        return 1
+    fi
+    
+    log "✅ PostgreSQL connection successful"
+    
+    # Créer le dump PostgreSQL
+    DUMP_FILE="$DUMP_DIR/postgres_dump_${TIMESTAMP}.sql"
+    log "💾 Creating PostgreSQL dump: $DUMP_FILE"
+    
+    if pg_dump -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" > "$DUMP_FILE"; then
+        # Calculer la taille du dump
+        DUMP_SIZE=$(du -sh "$DUMP_FILE" | cut -f1)
+        log "✅ PostgreSQL dump created successfully: postgres_dump_${TIMESTAMP}.sql (size: $DUMP_SIZE)"
+        return 0
+    else
+        log "❌ PostgreSQL dump failed"
+        return 1
+    fi
+}
+
+# Fonction pour créer et uploader une archive
+create_and_upload_archive() {
+    local source_dir="$1"
+    local archive_name="$2"
+    local description="$3"
+    
+    log "📦 Creating $description archive..."
+    
+    if [ ! -d "$source_dir" ]; then
+        log "WARNING: Source directory $source_dir not found, skipping"
+        return 1
+    fi
+    
+    # Calculer la taille avant compression
+    SOURCE_SIZE=$(du -sh "$source_dir" | cut -f1)
+    log "📊 Source size: $SOURCE_SIZE"
+    
+    # Créer l'archive avec compression
+    ARCHIVE_PATH="$TEMP_DIR/$archive_name"
+    
+    log "🗜️ Compressing $source_dir to $archive_name..."
+    if tar -czf "$ARCHIVE_PATH" -C "$(dirname "$source_dir")" "$(basename "$source_dir")"; then
+        # Calculer la taille après compression
+        ARCHIVE_SIZE=$(du -sh "$ARCHIVE_PATH" | cut -f1)
+        log "✅ Archive created: $archive_name (compressed: $ARCHIVE_SIZE)"
+        
+        # Uploader sur S3
+        S3_PATH="s3://$S3_BUCKET/$S3_PREFIX/$archive_name"
+        log "⬆️ Uploading to S3: $S3_PATH"
+        
+        if aws s3 cp "$ARCHIVE_PATH" "$S3_PATH"; then
+            log "✅ S3 upload successful: $archive_name"
+            
+            # Déplacer l'archive vers le stockage local (copie #1)
+            LOCAL_ARCHIVE_PATH="/backup/storage/$archive_name"
+            mv "$ARCHIVE_PATH" "$LOCAL_ARCHIVE_PATH"
+            log "📁 Local copy saved: $LOCAL_ARCHIVE_PATH"
+            
+            return 0
+        else
+            log "❌ S3 upload failed: $archive_name"
+            
+            # En cas d'échec S3, garder quand même la copie locale
+            LOCAL_ARCHIVE_PATH="/backup/storage/$archive_name"
+            mv "$ARCHIVE_PATH" "$LOCAL_ARCHIVE_PATH"
+            log "📁 Local copy saved (S3 failed): $LOCAL_ARCHIVE_PATH"
+            
+            return 1
+        fi
+    else
+        log "❌ Archive creation failed: $archive_name"
+        return 1
+    fi
+}
+
+# Fonction de nettoyage S3
+cleanup_old_s3_backups() {
+    local retention_days="{{ backup_retention_days }}"
+    
+    log "🧹 Cleaning up S3 backups older than $retention_days days"
+    
+    # Calculer la date limite (format ISO)
+    # Pour Alpine/busybox, utiliser une méthode compatible
+    CUTOFF_TIMESTAMP=$(($(date +%s) - retention_days * 24 * 3600))
+    CUTOFF_DATE=$(date -d "@$CUTOFF_TIMESTAMP" +%Y-%m-%d 2>/dev/null || date -r "$CUTOFF_TIMESTAMP" +%Y-%m-%d 2>/dev/null || echo "$(date +%Y-%m-%d)")
+    
+    log "Cutoff date: $CUTOFF_DATE"
+    
+    # Lister et supprimer les anciennes archives
+    aws s3 ls "s3://$S3_BUCKET/$S3_PREFIX/" --recursive | while read -r line; do
+        # Extraire la date et le nom du fichier
+        FILE_DATE=$(echo "$line" | awk '{print $1}')
+        FILE_NAME=$(echo "$line" | awk '{print $4}')
+        
+        # Comparer les dates
+        if [ "$FILE_DATE" \< "$CUTOFF_DATE" ]; then
+            log "🗑️ Deleting old backup: $FILE_NAME (date: $FILE_DATE)"
+            aws s3 rm "s3://$S3_BUCKET/$FILE_NAME"
+        fi
+    done
+    
+    # Nettoyer les anciens dumps locaux
+    find "$DUMP_DIR" -name "*.sql" -mtime +$retention_days -delete 2>/dev/null || true
+    
+    # Nettoyer les anciennes archives locales
+    log "🧹 Cleaning up local archives older than $retention_days days"
+    find "/backup/storage" -name "*.tar.gz" -mtime +$retention_days -delete 2>/dev/null || true
+    
+    log "✅ Cleanup completed"
+}
+
+# === MAIN EXECUTION ===
+
+log "🚀 Starting ASPHub Hybrid S3 Backup (ID: $BACKUP_ID)"
+
+# Vérifier que les données sources existent
+if [ ! -d "/backup/source/postgres" ] && [ ! -d "/backup/source/minio" ]; then
+    error_exit "No source data found. Check volume mounts."
+fi
+
+# ÉTAPE 0: Créer les dumps PostgreSQL
+log "🗄️ Step 0/4: Creating database dumps"
+if create_postgres_dump; then
+    log "✅ PostgreSQL dump created successfully"
+else
+    log "⚠️ PostgreSQL dump failed - continuing with volume backup only"
+fi
+
+# ÉTAPE 1: Backup PostgreSQL data
+log "📦 Step 1/4: Backing up PostgreSQL data"
+if ! create_and_upload_archive "/backup/source/postgres" "$POSTGRES_ARCHIVE" "PostgreSQL data"; then
+    log "WARNING: PostgreSQL backup failed - continuing"
+fi
+
+# ÉTAPE 2: Backup MinIO data
+log "📦 Step 2/4: Backing up MinIO data"
+if ! create_and_upload_archive "/backup/source/minio" "$MINIO_ARCHIVE" "MinIO data"; then
+    log "WARNING: MinIO backup failed - continuing"
+fi
+
+# ÉTAPE 3: Backup dumps (si ils existent)
+log "📦 Step 3/4: Backing up database dumps"
+if [ -d "$DUMP_DIR" ] && [ "$(ls -A "$DUMP_DIR")" ]; then
+    if ! create_and_upload_archive "$DUMP_DIR" "$DUMPS_ARCHIVE" "Database dumps"; then
+        log "WARNING: Dumps backup failed - continuing"
+    fi
+else
+    log "No dumps to backup"
+fi
+
+# ÉTAPE 4: Nettoyage des anciens backups
+log "🧹 Step 4/4: Cleaning up old backups"
+cleanup_old_s3_backups
+
+# Calculer les statistiques finales
+POSTGRES_SIZE=$(du -sh /backup/source/postgres 2>/dev/null | cut -f1 || echo "N/A")
+MINIO_SIZE=$(du -sh /backup/source/minio 2>/dev/null | cut -f1 || echo "N/A")
+DUMPS_SIZE=$(du -sh /backup/dumps 2>/dev/null | cut -f1 || echo "N/A")
+
+log "📊 Backup Statistics:"
+log "   - PostgreSQL data: $POSTGRES_SIZE"
+log "   - MinIO data: $MINIO_SIZE"
+log "   - SQL dumps: $DUMPS_SIZE"
+log "   - Backup ID: $BACKUP_ID"
+log "   - 3-2-1 Strategy:"
+log "     * Local copies: /backup/storage/"
+log "     * S3 copies: s3://$S3_BUCKET/$S3_PREFIX/"
+log "   - Archives created:"
+log "     * $POSTGRES_ARCHIVE"
+log "     * $MINIO_ARCHIVE"
+log "     * $DUMPS_ARCHIVE"
+
+log "🎉 Hybrid backup completed successfully!"
+
+# Créer un fichier de statut pour monitoring
+cat > /backup/storage/last_backup_status.json << EOF
+{
+    "backup_id": "$BACKUP_ID",
+    "timestamp": "$(date -Iseconds)",
+    "status": "success",
+    "method": "hybrid-s3",
+    "strategy": "3-2-1",
+    "postgres_size": "$POSTGRES_SIZE",
+    "minio_size": "$MINIO_SIZE",
+    "dumps_size": "$DUMPS_SIZE",
+    "copies": {
+        "local": "/backup/storage/",
+        "s3": "s3://$S3_BUCKET/$S3_PREFIX/"
+    },
+    "archives": [
+        "$POSTGRES_ARCHIVE",
+        "$MINIO_ARCHIVE",
+        "$DUMPS_ARCHIVE"
+    ]
+}
+EOF
+
+log "✅ Status file created: /backup/storage/last_backup_status.json" 

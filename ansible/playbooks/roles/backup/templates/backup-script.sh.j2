@@ -1,7 +1,7 @@
 #!/bin/sh
 
-# ASPHub Backup Script - Solution simplifiée 3-2-1
-# Remplace les 10 templates complexes par un script simple
+# ASPHub Backup Script - Solution 3-2-1 avec archive S3 des données sources
+# Backup local avec Plakar + archive tar.gz des données sources sur S3
 
 set -e
 
@@ -9,16 +9,16 @@ set -e
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 LOG_FILE="/backup/storage/backup.log"
 BACKUP_ID="backup_${TIMESTAMP}"
+DUMP_DIR="/backup/dumps"
+TEMP_DIR="/tmp"
 
 # Repositories (3-2-1 Strategy)
 LOCAL_REPO="/backup/storage/local"
-SFTP_REPO="sftp://{{ vault_backup_sftp_user }}@{{ vault_backup_sftp_host }}{{ vault_backup_sftp_path }}"
-S3_REPO="s3://{{ vault_backup_s3_region }}.amazonaws.com/{{ vault_backup_s3_bucket }}"
+S3_BUCKET="{{ vault_backup_s3_bucket }}"
+S3_ARCHIVE_NAME="asphub_backup_${TIMESTAMP}.tar.gz"
 
 # Passphrases
 LOCAL_PASSPHRASE="{{ vault_backup_local_passphrase }}"
-SFTP_PASSPHRASE="{{ vault_backup_sftp_passphrase }}"
-S3_PASSPHRASE="{{ vault_backup_s3_passphrase }}"
 
 # Fonction de log
 log() {
@@ -30,7 +30,33 @@ error_exit() {
     exit 1
 }
 
-# Fonction de backup Plakar
+# Fonction pour créer un dump PostgreSQL
+create_postgres_dump() {
+    log "🗄️ Creating PostgreSQL dump..."
+    
+    # Créer le répertoire de dumps
+    mkdir -p "$DUMP_DIR"
+    
+    # Dump PostgreSQL depuis le conteneur
+    POSTGRES_CONTAINER=$(docker ps -q -f name=asphub_database_postgres)
+    if [ -z "$POSTGRES_CONTAINER" ]; then
+        log "WARNING: PostgreSQL container not found, skipping dump"
+        return 1
+    fi
+    
+    # Créer le dump
+    docker exec "$POSTGRES_CONTAINER" pg_dump -U postgres asphub > "$DUMP_DIR/postgres_dump_${TIMESTAMP}.sql"
+    
+    if [ $? -eq 0 ]; then
+        log "✅ PostgreSQL dump created: postgres_dump_${TIMESTAMP}.sql"
+        return 0
+    else
+        log "❌ PostgreSQL dump failed"
+        return 1
+    fi
+}
+
+# Fonction de backup Plakar local
 plakar_backup() {
     local repo="$1"
     local passphrase="$2"
@@ -41,13 +67,13 @@ plakar_backup() {
     export PLAKAR_REPOSITORY_PASSPHRASE="$passphrase"
     
     # Initialiser le repository s'il n'existe pas
-    if ! plakar -repository "$repo" info >/dev/null 2>&1; then
+    if ! plakar -no-agent at "$repo" info >/dev/null 2>&1; then
         log "Initializing repository: $repo"
-        plakar -repository "$repo" create
+        plakar -no-agent at "$repo" create
     fi
     
-    # Créer le backup
-    if plakar -repository "$repo" backup /backup/source; then
+    # Créer le backup avec les sources ET les dumps
+    if plakar -no-agent at "$repo" backup /backup/source /backup/dumps; then
         log "✅ Backup successful: $repo"
         return 0
     else
@@ -56,29 +82,38 @@ plakar_backup() {
     fi
 }
 
-# Fonction de synchronisation
-sync_repo() {
-    local source_repo="$1"
-    local target_repo="$2"
-    local source_pass="$3"
-    local target_pass="$4"
+# Fonction pour créer et uploader l'archive S3
+create_s3_archive() {
+    log "☁️ Creating S3 archive with source data..."
     
-    log "Synchronizing $source_repo -> $target_repo"
+    # Créer l'archive tar.gz avec les données sources
+    ARCHIVE_PATH="$TEMP_DIR/$S3_ARCHIVE_NAME"
     
-    # Initialiser le repository cible s'il n'existe pas
-    export PLAKAR_REPOSITORY_PASSPHRASE="$target_pass"
-    if ! plakar -repository "$target_repo" info >/dev/null 2>&1; then
-        log "Initializing target repository: $target_repo"
-        plakar -repository "$target_repo" create
-    fi
-    
-    # Synchroniser
-    export PLAKAR_REPOSITORY_PASSPHRASE="$source_pass"
-    if plakar -repository "$source_repo" sync "$target_repo"; then
-        log "✅ Sync successful: $target_repo"
-        return 0
+    # Créer l'archive avec les données sources et les dumps
+    if tar -czf "$ARCHIVE_PATH" -C /backup source dumps; then
+        log "✅ Archive created: $ARCHIVE_PATH"
+        
+        # Calculer la taille de l'archive
+        ARCHIVE_SIZE=$(du -sh "$ARCHIVE_PATH" | cut -f1)
+        log "📦 Archive size: $ARCHIVE_SIZE"
+        
+        # Uploader sur S3
+        log "⬆️ Uploading to S3: s3://$S3_BUCKET/$S3_ARCHIVE_NAME"
+        if aws s3 cp "$ARCHIVE_PATH" "s3://$S3_BUCKET/$S3_ARCHIVE_NAME"; then
+            log "✅ S3 upload successful"
+            
+            # Nettoyer l'archive temporaire
+            rm -f "$ARCHIVE_PATH"
+            log "🧹 Temporary archive cleaned up"
+            
+            return 0
+        else
+            log "❌ S3 upload failed"
+            rm -f "$ARCHIVE_PATH"
+            return 1
+        fi
     else
-        log "❌ Sync failed: $target_repo"
+        log "❌ Archive creation failed"
         return 1
     fi
 }
@@ -93,16 +128,13 @@ cleanup_old_backups() {
     
     export PLAKAR_REPOSITORY_PASSPHRASE="$passphrase"
     
-    # Supprimer les snapshots plus anciens que la rétention
-    plakar -repository "$repo" snapshots --format=json | \
-    jq -r --arg cutoff "$(date -d "$retention_days days ago" +%s)" \
-    '.[] | select(.timestamp < ($cutoff | tonumber)) | .id' | \
-    while read -r snapshot_id; do
-        if [ -n "$snapshot_id" ]; then
-            log "Removing old snapshot: $snapshot_id"
-            plakar -repository "$repo" rm "$snapshot_id" || log "WARNING: Failed to remove $snapshot_id"
-        fi
-    done
+    # Supprimer les anciens dumps locaux
+    find "$DUMP_DIR" -name "*.sql" -mtime +$retention_days -delete 2>/dev/null || true
+    
+    # Nettoyer les anciennes archives S3 (optionnel - peut être géré par lifecycle policy)
+    log "Note: S3 cleanup can be managed by bucket lifecycle policies"
+    
+    log "✅ Cleanup completed"
 }
 
 # === MAIN EXECUTION ===
@@ -114,32 +146,34 @@ if [ ! -d "/backup/source/postgres" ] || [ ! -d "/backup/source/minio" ]; then
     error_exit "Source data not found. Check volume mounts."
 fi
 
-# ÉTAPE 1: Backup local (copie #1)
-log "📦 Step 1/3: Creating local backup"
+# ÉTAPE 0: Créer les dumps PostgreSQL
+log "🗄️ Step 0/4: Creating database dumps"
+if create_postgres_dump; then
+    log "✅ PostgreSQL dump created successfully"
+else
+    log "⚠️ PostgreSQL dump failed - continuing with volume backup only"
+fi
+
+# ÉTAPE 1: Backup local avec Plakar (copie #1)
+log "📦 Step 1/4: Creating local backup with Plakar"
 if ! plakar_backup "$LOCAL_REPO" "$LOCAL_PASSPHRASE" "ASPHub local backup"; then
     error_exit "Local backup failed"
 fi
 
-# ÉTAPE 2: Sync vers repository SFTP (copie #2)
-log "🌐 Step 2/3: Syncing to SFTP repository"
-if ! sync_repo "$LOCAL_REPO" "$SFTP_REPO" "$LOCAL_PASSPHRASE" "$SFTP_PASSPHRASE"; then
-    log "WARNING: SFTP sync failed - continuing with backup"
+# ÉTAPE 2: Créer et uploader l'archive S3 (copie #2 - offsite)
+log "☁️ Step 2/4: Creating and uploading S3 archive"
+if ! create_s3_archive; then
+    log "WARNING: S3 archive creation/upload failed - continuing with backup"
 fi
 
-# ÉTAPE 3: Sync vers repository S3 (copie #3)
-log "🌐 Step 3/3: Syncing to S3 repository"
-if ! sync_repo "$LOCAL_REPO" "$S3_REPO" "$LOCAL_PASSPHRASE" "$S3_PASSPHRASE"; then
-    log "WARNING: S3 sync failed - continuing with backup"
-fi
-
-# ÉTAPE 4: Nettoyage des anciens backups
-log "🧹 Cleaning up old backups"
+# ÉTAPE 3: Nettoyage des anciens backups
+log "🧹 Step 3/4: Cleaning up old backups"
 cleanup_old_backups "$LOCAL_REPO" "$LOCAL_PASSPHRASE"
 
-# ÉTAPE 5: Vérification basique
-log "✅ Verifying backup integrity"
+# ÉTAPE 4: Vérification basique du backup local
+log "✅ Step 4/4: Verifying backup integrity"
 export PLAKAR_REPOSITORY_PASSPHRASE="$LOCAL_PASSPHRASE"
-if plakar -repository "$LOCAL_REPO" check; then
+if plakar -no-agent at "$LOCAL_REPO" check; then
     log "✅ Backup verification successful"
 else
     log "❌ Backup verification failed"
@@ -149,12 +183,15 @@ fi
 BACKUP_SIZE=$(du -sh /backup/storage | cut -f1)
 POSTGRES_SIZE=$(du -sh /backup/source/postgres | cut -f1)
 MINIO_SIZE=$(du -sh /backup/source/minio | cut -f1)
+DUMPS_SIZE=$(du -sh /backup/dumps 2>/dev/null | cut -f1 || echo "0")
 
 log "📊 Backup Statistics:"
 log "   - PostgreSQL data: $POSTGRES_SIZE"
 log "   - MinIO data: $MINIO_SIZE"
+log "   - SQL dumps: $DUMPS_SIZE"
 log "   - Total backup size: $BACKUP_SIZE"
 log "   - Backup ID: $BACKUP_ID"
+log "   - S3 Archive: $S3_ARCHIVE_NAME"
 
 log "🎉 Backup completed successfully!"
 
@@ -166,6 +203,8 @@ cat > /backup/storage/last_backup_status.json << EOF
     "status": "success",
     "postgres_size": "$POSTGRES_SIZE",
     "minio_size": "$MINIO_SIZE",
-    "total_size": "$BACKUP_SIZE"
+    "dumps_size": "$DUMPS_SIZE",
+    "total_size": "$BACKUP_SIZE",
+    "s3_archive": "$S3_ARCHIVE_NAME"
 }
 EOF 

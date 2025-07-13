@@ -10,6 +10,8 @@ RUN apk update && apk add --no-cache \
     dcron \
     openssh-client \
     ca-certificates \
+    aws-cli \
+    postgresql-client \
     && rm -rf /var/cache/apk/*
 
 # Installer Plakar

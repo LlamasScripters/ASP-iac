@@ -8,6 +8,10 @@ backup_schedule: "0 2 * * *"  # Daily at 2 AM
 # Retention policies
 backup_retention_days: 30
 
+# Backup script choice (to avoid Plakar freeze issues)
+backup_script: "backup-s3-hybrid.sh"  # Use hybrid script by default
+# backup_script: "backup-script.sh"   # Alternative: original Plakar script
+
 # Docker configuration
 backup_container_name: "asphub_backup"
 backup_stack_name: "asphub_backup"
@@ -30,7 +34,7 @@ backup_repositories:
     description: "SFTP backup repository (copy #2 - different media)"
     
   s3:
-    path: "s3://{{ vault_backup_s3_region }}.amazonaws.com/{{ vault_backup_s3_bucket }}"
+    path: "s3://{{ vault_backup_s3_bucket }}"
     description: "S3 backup repository (copy #3 - offsite)"
 
 # Logging

@@ -4,7 +4,7 @@ services:
     image: traefik:v3.4
     command:
       # Add dynamic configuration
-      - --providers.file.directory=/dyn
+      # - --providers.file.directory=/dyn
       # HTTP EntryPoint
       - "--entrypoints.web.address=:80"
 
@@ -16,7 +16,7 @@ services:
       # HTTPS EntryPoint
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
-      - "--entryPoints.websecure.http.middlewares=fail2ban@file"
+      # - "--entryPoints.websecure.http.middlewares=fail2ban@file"
 
       # Enable the Docker Swarm provider (instead of Docker provider)
       - "--providers.swarm.endpoint=unix:///var/run/docker.sock"
@@ -45,9 +45,9 @@ services:
       - "--accesslog=true" # Enable Access Logs
       - "--metrics.prometheus=true" # Enable Prometheus
 
-      # Fail2ban
-      - --experimental.plugins.fail2ban.modulename=github.com/tomMoulard/fail2ban
-      - --experimental.plugins.fail2ban.version=v0.8.6
+      # # Fail2ban
+      # - --experimental.plugins.fail2ban.modulename=github.com/tomMoulard/fail2ban
+      # - --experimental.plugins.fail2ban.version=v0.8.6
 
 
     deploy:
@@ -83,7 +83,6 @@ services:
         # Service hint
         - "traefik.http.services.traefik.loadbalancer.server.port=8080"
 
-
         # Rate limiting
         - "traefik.http.middlewares.ratelimit.ratelimit.average=25"
         - "traefik.http.middlewares.ratelimit.ratelimit.burst=50"
@@ -103,8 +102,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt:/letsencrypt
     configs:
-      - source: traefik_config
-        target: /dyn
+      - source: fail2ban_config
+        target: /dyn/fail2ban.yml
 
 networks:
   traefik_proxy:
@@ -116,7 +115,7 @@ secrets:
     external: true
 
 configs:
-  traefik_config:
+  fail2ban_config:
     external: true
 
 volumes:

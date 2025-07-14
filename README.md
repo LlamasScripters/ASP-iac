@@ -51,8 +51,7 @@ Ce projet fournit une infrastructure complète en **Infrastructure as Code (IaC)
 ┌─────────────────────────────────────────────────────────────┐
 │                      OVH DNS                                │
 ├─────────────────────────────────────────────────────────────┤
-│  • mchegdali.cloud (domaine principal)                     │
-│  • asphub.mchegdali.cloud                                   │
+│  • mchegdali.cloud (domaine principal)                      │
 │  • grafana.mchegdali.cloud                                  │
 │  • prometheus.mchegdali.cloud                               │
 │  • traefik.mchegdali.cloud                                  │
@@ -63,15 +62,15 @@ Ce projet fournit une infrastructure complète en **Infrastructure as Code (IaC)
 ### Architecture logicielle
 
 ```
-┌─────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────┐
 │                    Docker Swarm Cluster                    │
-├─────────────────────────────────────────────────────────────┤
+├────────────────────────────────────────────────────────────┤
 │  Manager Node (192.168.0.100)                              │
 │  ├── Traefik (Reverse Proxy + SSL)                         │
 │  ├── Prometheus (Métriques)                                │
 │  ├── Grafana (Dashboards)                                  │
 │  └── AlertManager (Alertes)                                │
-│                                                             │
+│                                                            │
 │  Worker Nodes (192.168.0.101-102)                          │
 │  ├── ASPHub Client (Frontend React)                        │
 │  ├── ASPHub Server (Backend Node.js)                       │
@@ -79,7 +78,7 @@ Ce projet fournit une infrastructure complète en **Infrastructure as Code (IaC)
 │  ├── MinIO (Stockage objets)                               │
 │  ├── Node Exporter (Métriques système)                     │
 │  └── cAdvisor (Métriques conteneurs)                       │
-└─────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────┘
 ```
 
 ### Flux de données
@@ -98,10 +97,10 @@ Internet → Traefik → [ASPHub Client|ASPHub Server] → PostgreSQL/MinIO
 
 ### Outils requis
 
-- **Terraform** ≥ 1.0
+- **Terraform** ≥ 1.11.4
 - **Ansible** ≥ 11.7.0
 - **Python** ≥ 3.12
-- **UV** (gestionnaire de paquets Python)
+- **UV** (gestionnaire de paquets Python) (https://docs.astral.sh/uv/getting-started/installation/)
 - **Git**
 
 ### Comptes cloud requis
@@ -126,14 +125,18 @@ Internet → Traefik → [ASPHub Client|ASPHub Server] → PostgreSQL/MinIO
 # Hetzner Cloud
 export HCLOUD_TOKEN="your-hetzner-token"
 
+# Ansible vault passsword
+export ANSIBLE_VAULT_PASS=
+
 # OVH
 export OVH_ENDPOINT="ovh-eu"
 export OVH_APPLICATION_KEY="your-app-key"
 export OVH_APPLICATION_SECRET="your-app-secret"
 export OVH_CONSUMER_KEY="your-consumer-key"
 
-# Terraform Cloud
-export TF_TOKEN_app_terraform_io="your-terraform-cloud-token"
+# Github
+export GITHUB_USERNAME=
+export GITHUB_TOKEN=
 ```
 
 ## 🚀 Installation et configuration
@@ -158,26 +161,12 @@ pip install -r requirements.txt
 ### 3. Installation des collections Ansible
 
 ```bash
-ansible-galaxy collection install -r ansible/requirements.yml
+cd ansible
+ansible-galaxy collection install -r requirements.yml
 ```
 
-### 4. Configuration des environnements
 
-#### Production
-```bash
-cd terraform/envs/production
-cp terraform.tfvars.example terraform.tfvars
-# Éditer terraform.tfvars avec vos valeurs
-```
-
-#### Staging
-```bash
-cd terraform/envs/staging
-cp terraform.tfvars.example terraform.tfvars
-# Éditer terraform.tfvars avec vos valeurs
-```
-
-### 5. Configuration des secrets Ansible
+### 4. Configuration des secrets Ansible
 
 Les secrets sont stockés dans des fichiers vault chiffrés :
 
@@ -186,6 +175,7 @@ Les secrets sont stockés dans des fichiers vault chiffrés :
 ansible-vault edit ansible/playbooks/group_vars/all/vault_asphub.yml
 ansible-vault edit ansible/playbooks/group_vars/all/vault_monitoring.yml
 ansible-vault edit ansible/playbooks/group_vars/all/vault_proxy.yml
+ansible-vault edit ansible/playbooks/group_vars/all/vault_backup.yml
 ```
 
 ## 🛠️ Déploiement
@@ -247,16 +237,19 @@ Le projet inclut un script de déploiement complet avec de nombreuses options :
 
 ```bash
 cd terraform/envs/production
+public_key=$(cat ~/.ssh/id_ed25519.pub) # adapter à votre configuration
 terraform init
-terraform plan
-terraform apply
+
+# Si environnement non déployé
+terraform plan -var="ssh_public_key=$public_key" -out tfplan
+terraform apply tfplan
 ```
 
 #### 2. Configuration Ansible
 
 ```bash
 cd ansible
-ansible-playbook -i inventory.yml playbooks/site.yml
+ansible-playbook playbooks/site.yml
 ```
 
 ## 🖥️ Services déployés
@@ -264,12 +257,11 @@ ansible-playbook -i inventory.yml playbooks/site.yml
 ### ASPHub (Application principale)
 
 - **Client** : Application React frontend
-  - URL : `https://asphub.mchegdali.cloud`
+  - URL : `https://mchegdali.cloud`
   - Déployé sur les workers
-  - Auto-déploiement avec Shepherd
 
 - **Server** : API Node.js backend
-  - URL : `https://asphub.mchegdali.cloud/api`
+  - URL : `https://mchegdali.cloud/api`
   - Déployé sur les workers
   - Variables d'environnement via secrets Docker
 
@@ -316,7 +308,7 @@ ansible-playbook -i inventory.yml playbooks/site.yml
 - **Notifications** :
   - Alertes système
   - Alertes applicatives
-  - Notifications configurable (email, Slack, etc.)
+  - Notifications sur Discord (possibilité d'ajouter d'autres moyens comme les emails, Slack, ...)
 
 ## 📊 Surveillance et monitoring
 
@@ -404,9 +396,6 @@ terraform/envs/
 
 ### Mises à jour
 
-#### Images Docker
-Les images sont mises à jour automatiquement via **Shepherd** (configuré dans les services).
-
 #### Mise à jour manuelle
 ```bash
 # Mettre à jour une stack spécifique
@@ -426,7 +415,7 @@ docker exec $(docker ps -q -f name=asphub_postgres) \
 
 # Restauration
 docker exec -i $(docker ps -q -f name=asphub_postgres) \
-  psql -U postgres asphub < backup_20241201.sql
+  psql -U postgres asphub < backup_20250715.sql
 ```
 
 #### Volumes Docker
@@ -464,7 +453,6 @@ docker service update --replicas 3 asphub_server
 ```bash
 # Vérifier les tokens
 echo $HCLOUD_TOKEN
-echo $TF_TOKEN_app_terraform_io
 
 # Réinitialiser l'état
 cd terraform/envs/production
@@ -494,7 +482,7 @@ docker service update --force proxy_traefik
 #### 4. Problèmes de résolution DNS
 ```bash
 # Vérifier la configuration DNS
-dig asphub.mchegdali.cloud
+dig mchegdali.cloud
 nslookup grafana.mchegdali.cloud
 ```
 
@@ -550,16 +538,6 @@ ASP-iac/
 └── README.md               # Documentation
 ```
 
-### Workflow de développement
-
-1. **Fork** du repository
-2. **Créer une branche** pour la fonctionnalité
-3. **Tester** en staging
-4. **Créer une Pull Request**
-5. **Review** et validation
-6. **Merge** vers main
-7. **Déploiement** en production
-
 ### Standards de code
 
 #### Terraform
@@ -608,14 +586,3 @@ ansible-lint playbooks/
 - [Docker Swarm Guide](https://docs.docker.com/engine/swarm/)
 - [Traefik Documentation](https://doc.traefik.io/traefik/)
 - [Prometheus Documentation](https://prometheus.io/docs/)
-
-
-## 🆘 Support
-
-Pour toute question ou problème :
-
-1. Consultez la section [Troubleshooting](#troubleshooting)
-2. Vérifiez les [issues existantes](../../issues)
-3. Créez une [nouvelle issue](../../issues/new) si nécessaire
-
----

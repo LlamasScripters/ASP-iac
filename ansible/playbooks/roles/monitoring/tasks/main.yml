@@ -138,6 +138,18 @@
     data_src: /app/monitoring/grafana/dashboards/asphub-server-dashboard.json
   register: grafana_asphub_server_dashboard_result
 
+- name: Create Grafana ASPHub Backup Dashboard Docker Config
+  community.docker.docker_config:
+    name: "{{ grafana_asphub_backup_dashboard_name }}"
+    data_src: /app/monitoring/grafana/dashboards/asphub-backup-dashboard.json
+  register: grafana_asphub_backup_dashboard_result
+
+- name: Create Grafana Uptime Kuma Dashboard Docker Config
+  community.docker.docker_config:
+    name: "{{ grafana_uptime_kuma_dashboard_name }}"
+    data_src: /app/monitoring/grafana/dashboards/uptime-kuma-dashboard.json
+  register: grafana_uptime_kuma_dashboard_result
+
 - name: Deploy monitoring stack
   community.docker.docker_stack:
     name: monitoring

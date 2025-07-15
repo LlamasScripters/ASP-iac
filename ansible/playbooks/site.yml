@@ -62,3 +62,10 @@
   become: true
   roles:
     - backup
+
+- name: Setup uptime monitoring with Uptime Kuma
+  tags: uptime-kuma
+  hosts: managers
+  become: true
+  roles:
+    - uptime-kuma

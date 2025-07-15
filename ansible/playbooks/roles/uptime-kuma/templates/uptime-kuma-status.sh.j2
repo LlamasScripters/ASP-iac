@@ -1,0 +1,65 @@
+#!/bin/bash
+
+# Script pour vérifier le statut d'Uptime Kuma
+# Affiche l'état du conteneur et les métriques de base
+
+set -e
+
+echo "📊 Uptime Kuma Status"
+echo "===================="
+
+# Vérifier l'état du conteneur
+echo "🐳 Container Status:"
+if docker service ls --format "table {{.Name}}\t{{.Replicas}}" | grep -q "uptime-kuma_uptime-kuma"; then
+    docker service ls --format "table {{.Name}}\t{{.Replicas}}\t{{.Image}}" | grep "uptime-kuma"
+    echo "✅ Uptime Kuma service is running"
+else
+    echo "❌ Uptime Kuma service is not running"
+    exit 1
+fi
+
+echo ""
+
+# Vérifier les volumes
+echo "💾 Volume Status:"
+echo "- uptime_kuma_data: $(docker volume ls | grep uptime_kuma_data | awk '{print $2}')"
+
+echo ""
+
+# Afficher les derniers logs du conteneur
+echo "📝 Recent Logs (last 10 lines):"
+docker service logs --tail 10 uptime-kuma_uptime-kuma 2>/dev/null || echo "No logs available"
+
+echo ""
+
+# Vérifier la connectivité
+echo "🌐 Service Health Check:"
+if curl -s -o /dev/null -w "%{http_code}" "https://{{ uptime_kuma_domain }}" | grep -q "200\|301\|302"; then
+    echo "✅ Uptime Kuma is accessible at https://{{ uptime_kuma_domain }}"
+else
+    echo "❌ Uptime Kuma is not accessible"
+fi
+
+echo ""
+
+# Afficher les informations de configuration
+echo "⚙️ Configuration:"
+echo "- Domain: {{ uptime_kuma_domain }}"
+echo "- Version: {{ uptime_kuma_version }}"
+echo "- Port: {{ uptime_kuma_port }}"
+echo "- Data Volume: {{ uptime_kuma_data_volume }}"
+
+echo ""
+
+# Afficher les monitors recommandés
+echo "📋 Recommended Monitors to Add:"
+{% for monitor in uptime_kuma_default_monitors %}
+echo "- {{ monitor.name }}: {{ monitor.url }} ({{ monitor.type }}, {{ monitor.interval }}s)"
+{% endfor %}
+
+echo ""
+echo "🔧 Management Commands:"
+echo "- Service logs: docker service logs uptime-kuma_uptime-kuma"
+echo "- Service status: docker service ps uptime-kuma_uptime-kuma"
+echo "- Access interface: https://{{ uptime_kuma_domain }}"
+echo "- Restart service: docker service update --force uptime-kuma_uptime-kuma"

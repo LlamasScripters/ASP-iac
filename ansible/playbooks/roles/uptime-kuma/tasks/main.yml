@@ -1,0 +1,61 @@
+---
+- name: Create uptime-kuma directory for scripts
+  ansible.builtin.file:
+    path: /opt/uptime-kuma
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Create uptime-kuma network
+  community.docker.docker_network:
+    name: uptime_kuma_network
+    driver: overlay
+    scope: swarm
+    attachable: true
+
+- name: Create uptime-kuma data volume
+  community.docker.docker_volume:
+    name: "{{ uptime_kuma_data_volume }}"
+    driver: local
+
+- name: Create uptime-kuma compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ ansible_env.HOME }}/uptime-kuma-compose.yml"
+    mode: '0644'
+
+- name: Deploy uptime-kuma compose stack
+  community.docker.docker_stack:
+    state: present
+    name: "{{ uptime_kuma_stack_name }}"
+    compose:
+      - "{{ ansible_env.HOME }}/uptime-kuma-compose.yml"
+
+- name: Wait for uptime-kuma to be ready
+  ansible.builtin.uri:
+    url: "https://{{ uptime_kuma_domain }}"
+    method: GET
+    status_code: 200
+    validate_certs: yes
+  register: uptime_kuma_health
+  until: uptime_kuma_health.status == 200
+  retries: 30
+  delay: 10
+  ignore_errors: yes
+
+- name: Create uptime-kuma status check script
+  ansible.builtin.template:
+    src: uptime-kuma-status.sh.j2
+    dest: /opt/uptime-kuma/uptime-kuma-status.sh
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Display uptime-kuma information
+  ansible.builtin.debug:
+    msg:
+      - "Uptime Kuma has been deployed successfully!"
+      - "URL: https://{{ uptime_kuma_domain }}"
+      - "Please complete the initial setup manually in the web interface"
+      - "Recommended: Add the default monitors listed in vars/main.yml"

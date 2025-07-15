@@ -55,7 +55,9 @@ usage() {
     printf "    common                  Base server setup (Docker, users, security)\n"
     printf "    proxy                   Traefik reverse proxy\n"
     printf "    monitoring              Prometheus, Grafana, AlertManager stack\n"
-    printf "    asphub                  Main application with PostgreSQL\n\n"
+    printf "    asphub                  Main application with PostgreSQL\n"
+    printf "    backup                  Backup system with 3-2-1 strategy\n"
+    printf "    uptime-kuma             Uptime monitoring dashboard\n\n"
 }
 
 # Parse command line arguments
@@ -307,4 +309,5 @@ if [[ "$ENV" == "production" ]]; then
     echo "  - AlertManager: https://alertmanager.mchegdali.cloud"
     echo "  - ASPHub: https://mchegdali.cloud"
     echo "  - Traefik: https://traefik.mchegdali.cloud"
+    echo "  - Uptime Kuma: https://uptime.mchegdali.cloud"
 fi

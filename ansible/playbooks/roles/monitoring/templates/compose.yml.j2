@@ -66,6 +66,10 @@ services:
         target: /etc/grafana/provisioning/dashboards/asphub-overview-dashboard.json
       - source: {{ grafana_asphub_server_dashboard_name }}
         target: /etc/grafana/provisioning/dashboards/asphub-server-dashboard.json
+      - source: {{ grafana_asphub_backup_dashboard_name }}
+        target: /etc/grafana/provisioning/dashboards/asphub-backup-dashboard.json
+      - source: {{ grafana_uptime_kuma_dashboard_name }}
+        target: /etc/grafana/provisioning/dashboards/uptime-kuma-dashboard.json
     networks:
       - monitoring_network
       - proxy_traefik_proxy
@@ -211,4 +215,8 @@ configs:
   {{ grafana_asphub_overview_dashboard_name }}:
     external: true
   {{ grafana_asphub_server_dashboard_name }}:
+    external: true
+  {{ grafana_asphub_backup_dashboard_name }}:
+    external: true
+  {{ grafana_uptime_kuma_dashboard_name }}:
     external: true

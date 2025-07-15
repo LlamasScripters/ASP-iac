@@ -1,0 +1,48 @@
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:{{ uptime_kuma_version }}
+    container_name: uptime-kuma
+    volumes:
+      - {{ uptime_kuma_data_volume }}:/app/data
+    environment:
+      - UPTIME_KUMA_PORT={{ uptime_kuma_port }}
+      - UPTIME_KUMA_HOST=0.0.0.0
+    networks:
+      - uptime_kuma_network
+      - proxy_traefik_proxy
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "{{ uptime_kuma_cpu_limit }}"
+          memory: "{{ uptime_kuma_memory_limit }}"
+        reservations:
+          cpus: "{{ uptime_kuma_cpu_reservation }}"
+          memory: "{{ uptime_kuma_memory_reservation }}"
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.uptime-kuma.rule=Host(`{{ uptime_kuma_domain }}`)"
+        - "traefik.http.routers.uptime-kuma.service=uptime-kuma"
+        - "traefik.http.routers.uptime-kuma.entrypoints=websecure"
+        - "traefik.http.services.uptime-kuma.loadbalancer.server.port={{ uptime_kuma_port }}"
+        - "traefik.http.routers.uptime-kuma.tls=true"
+        - "traefik.http.routers.uptime-kuma.tls.certresolver=letsencrypt"
+        # Security headers
+        - "traefik.http.routers.uptime-kuma.middlewares=uptime-kuma-headers"
+        - "traefik.http.middlewares.uptime-kuma-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+        - "traefik.http.middlewares.uptime-kuma-headers.headers.customrequestheaders.X-Forwarded-For="
+        - "traefik.http.middlewares.uptime-kuma-headers.headers.customrequestheaders.X-Real-IP="
+
+networks:
+  uptime_kuma_network:
+    external: true
+  proxy_traefik_proxy:
+    external: true
+
+volumes:
+  {{ uptime_kuma_data_volume }}:
+    driver: local

@@ -69,7 +69,8 @@ Ce projet fournit une infrastructure complète en **Infrastructure as Code (IaC)
 │  ├── Traefik (Reverse Proxy + SSL)                         │
 │  ├── Prometheus (Métriques)                                │
 │  ├── Grafana (Dashboards)                                  │
-│  └── AlertManager (Alertes)                                │
+│  ├── AlertManager (Alertes)                                │
+│  └── Uptime Kuma (Monitoring services)                     │
 │                                                            │
 │  Worker Nodes (192.168.0.101-102)                          │
 │  ├── ASPHub Client (Frontend React)                        │
@@ -91,6 +92,8 @@ Internet → Traefik → [ASPHub Client|ASPHub Server] → PostgreSQL/MinIO
                        Grafana → Dashboards
                            ↓
                     AlertManager → Notifications
+                           ↓
+                    Uptime Kuma → Services Monitoring
 ```
 
 ## 📋 Prérequis
@@ -310,6 +313,22 @@ ansible-playbook playbooks/site.yml
   - Alertes applicatives
   - Notifications sur Discord (possibilité d'ajouter d'autres moyens comme les emails, Slack, ...)
 
+#### Uptime Kuma
+- **URL** : `https://uptime.mchegdali.cloud`
+- **Monitoring** :
+  - Surveillance des services HTTP/HTTPS
+  - Contrôle de l'état des API
+  - Alertes en temps réel
+  - Dashboard de statut public
+  - Notifications intégrées
+- **Monitors configurés** :
+  - ASPHub Main (https://mchegdali.cloud)
+  - ASPHub API (https://mchegdali.cloud/api/health)
+  - Grafana (https://grafana.mchegdali.cloud)
+  - Prometheus (https://prometheus.mchegdali.cloud)
+  - AlertManager (https://alertmanager.mchegdali.cloud)
+  - Traefik (https://traefik.mchegdali.cloud)
+
 ## 📊 Surveillance et monitoring
 
 ### Dashboards Grafana
@@ -328,6 +347,16 @@ ansible-playbook playbooks/site.yml
    - Santé des serveurs
    - Utilisation CPU/RAM/Disk
    - Métriques réseau
+
+4. **ASPHub Backup Dashboard**
+   - État des sauvegardes
+   - Statistiques de sauvegarde
+   - Alertes de sauvegarde
+
+5. **Uptime Kuma Dashboard**
+   - État des services d'Uptime Kuma
+   - Métriques de performance
+   - Utilisation des ressources
 
 ### Alertes configurées
 
@@ -350,6 +379,9 @@ docker service logs asphub_client
 # Logs monitoring
 docker service logs monitoring_prometheus
 docker service logs monitoring_grafana
+
+# Logs Uptime Kuma
+docker service logs uptime-kuma_uptime-kuma
 ```
 
 ## 🌍 Gestion des environnements

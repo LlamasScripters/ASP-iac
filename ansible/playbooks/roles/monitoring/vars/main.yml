@@ -27,3 +27,5 @@ monitoring_discord_webhook_url: "{{ vault_discord_webhook_url | default('https:/
 # Docker Config Names
 grafana_asphub_overview_dashboard_name: "grafana_asphub_overview_dashboard_{{ ansible_date_time.iso8601_basic_short }}"
 grafana_asphub_server_dashboard_name: "grafana_asphub_server_dashboard_{{ ansible_date_time.iso8601_basic_short }}"
+grafana_asphub_backup_dashboard_name: "grafana_asphub_backup_dashboard_{{ ansible_date_time.iso8601_basic_short }}"
+grafana_uptime_kuma_dashboard_name: "grafana_uptime_kuma_dashboard_{{ ansible_date_time.iso8601_basic_short }}"

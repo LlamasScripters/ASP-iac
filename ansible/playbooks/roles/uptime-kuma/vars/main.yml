@@ -1,0 +1,49 @@
+---
+# Uptime Kuma Configuration
+uptime_kuma_domain: uptime.mchegdali.cloud
+uptime_kuma_version: "1.23.15"
+uptime_kuma_port: 3001
+
+# Docker Stack Configuration
+uptime_kuma_stack_name: "uptime-kuma"
+
+# Resource limits
+uptime_kuma_cpu_limit: "0.5"
+uptime_kuma_memory_limit: "512M"
+uptime_kuma_cpu_reservation: "0.1"
+uptime_kuma_memory_reservation: "256M"
+
+# Data persistence
+uptime_kuma_data_volume: "uptime_kuma_data"
+
+# Notification settings (Discord webhook from monitoring)
+uptime_kuma_notifications:
+  discord:
+    webhook_url: "{{ vault_discord_webhook_url | default('') }}"
+
+# Default monitors configuration
+uptime_kuma_default_monitors:
+  - name: "ASPHub Main"
+    url: "https://mchegdali.cloud"
+    type: "http"
+    interval: 60
+  - name: "ASPHub API"
+    url: "https://mchegdali.cloud/api/health"
+    type: "http"
+    interval: 60
+  - name: "Grafana"
+    url: "https://grafana.mchegdali.cloud"
+    type: "http"
+    interval: 300
+  - name: "Prometheus"
+    url: "https://prometheus.mchegdali.cloud"
+    type: "http"
+    interval: 300
+  - name: "AlertManager"
+    url: "https://alertmanager.mchegdali.cloud"
+    type: "http"
+    interval: 300
+  - name: "Traefik Dashboard"
+    url: "https://traefik.mchegdali.cloud"
+    type: "http"
+    interval: 300

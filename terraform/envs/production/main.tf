@@ -42,7 +42,7 @@ resource "hcloud_ssh_key" "ssh_key" {
 resource "hcloud_server" "manager" {
   name        = "srv-${var.project_name}-manager-prod"
   image       = local.image
-  server_type = var.server_type
+  server_type = var.manager_server_type
   location    = var.location
   labels = {
     "type" = "manager"
@@ -68,7 +68,7 @@ resource "hcloud_server" "manager" {
 resource "hcloud_server" "worker1" {
   name        = "srv-${var.project_name}-worker1-prod"
   image       = local.image
-  server_type = var.server_type
+  server_type = var.worker_server_type
   location    = var.location
 
   labels = {
@@ -95,11 +95,38 @@ resource "hcloud_server" "worker1" {
 resource "hcloud_server" "worker2" {
   name        = "srv-${var.project_name}-worker2-prod"
   image       = local.image
-  server_type = var.server_type
+  server_type = var.worker_server_type
   location    = var.location
 
   labels = {
     "type" = "worker"
+    "env"  = "production"
+  }
+
+  public_net {
+    ipv4_enabled = true
+    ipv6_enabled = true
+  }
+
+  ssh_keys = [hcloud_ssh_key.ssh_key.id]
+
+  lifecycle {
+    ignore_changes = [ssh_keys]
+  }
+
+  user_data = templatefile("cloud-init.yaml.tftpl", {
+    ssh_public_key = var.ssh_public_key
+  })
+}
+
+resource "hcloud_server" "database" {
+  name        = "srv-${var.project_name}-database-prod"
+  image       = local.image
+  server_type = var.database_server_type
+  location    = var.location
+
+  labels = {
+    "type" = "database"
     "env"  = "production"
   }
 
@@ -153,6 +180,12 @@ resource "hcloud_server_network" "worker2_network" {
   ip         = "192.168.0.102"
 }
 
+resource "hcloud_server_network" "database_network" {
+  server_id  = hcloud_server.database.id
+  network_id = hcloud_network.network.id
+  ip         = "192.168.0.103"
+}
+
 #region DNS
 
 data "ovh_domain_zone" "root_zone" {
@@ -198,6 +231,14 @@ resource "ansible_group" "workers" {
   name = "workers"
 }
 
+resource "ansible_group" "database" {
+  name = "database"
+
+  variables = {
+    domain = local.domain
+  }
+}
+
 resource "ansible_host" "manager" {
   name   = hcloud_server.manager.name
   groups = ["managers"]
@@ -232,4 +273,16 @@ resource "ansible_host" "worker2" {
   }
 
   depends_on = [ansible_group.workers, hcloud_server.worker2]
+}
+
+resource "ansible_host" "database" {
+  name   = hcloud_server.database.name
+  groups = ["database"]
+
+  variables = {
+    ansible_user = "asphub"
+    ansible_host = hcloud_server.database.ipv4_address
+  }
+
+  depends_on = [ansible_group.database, hcloud_server.database]
 }

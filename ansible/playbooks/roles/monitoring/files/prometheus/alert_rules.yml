@@ -19,6 +19,15 @@ groups:
       summary: "High CPU usage on {{ $labels.instance }}"
       description: "CPU usage is above 80% for more than 10 minutes on {{ $labels.instance }}."
 
+  - alert: DatabaseHighCpuUsage
+    expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle",instance=~".*database.*"}[5m])) * 100) > 70
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU usage on database node {{ $labels.instance }}"
+      description: "Database node CPU usage is above 70% for more than 5 minutes on {{ $labels.instance }}."
+
   - alert: HighMemoryUsage
     expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
     for: 10m
@@ -27,6 +36,15 @@ groups:
     annotations:
       summary: "High memory usage on {{ $labels.instance }}"
       description: "Memory usage is above 85% for more than 10 minutes on {{ $labels.instance }}."
+
+  - alert: DatabaseHighMemoryUsage
+    expr: (1 - (node_memory_MemAvailable_bytes{instance=~".*database.*"} / node_memory_MemTotal_bytes{instance=~".*database.*"})) * 100 > 75
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High memory usage on database node {{ $labels.instance }}"
+      description: "Database node memory usage is above 75% for more than 5 minutes on {{ $labels.instance }}."
 
   - alert: DiskSpaceLow
     expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs"})) * 100 > 85
@@ -305,3 +323,41 @@ groups:
     annotations:
       summary: "No recent successful backups"
       description: "No successful backup has been completed in the last 2 days. Data protection is severely compromised."
+
+- name: database_alerts
+  rules:
+  - alert: DatabaseConnectionsHigh
+    expr: (sum(pg_stat_activity_count{state!="idle"}) / sum(pg_settings_max_connections)) * 100 > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High database connection usage"
+      description: "Database connection usage is above 80% ({{ $value }}%) for more than 5 minutes."
+
+  - alert: DatabaseSlowQueries
+    expr: rate(pg_stat_user_tables_seq_scan[5m]) > 10
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High sequential scan rate detected"
+      description: "Database is performing {{ $value }} sequential scans per second, which may indicate missing indexes."
+
+  - alert: DatabaseLockWaits
+    expr: pg_stat_database_conflicts > 0
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Database conflicts detected"
+      description: "Database conflicts detected: {{ $value }} conflicts in the last period."
+
+  - alert: DatabaseDiskSpaceHigh
+    expr: (1 - (node_filesystem_avail_bytes{instance=~".*database.*",mountpoint="/var/lib/postgresql"} / node_filesystem_size_bytes{instance=~".*database.*",mountpoint="/var/lib/postgresql"})) * 100 > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High database disk usage"
+      description: "Database disk usage is above 80% ({{ $value }}%) on {{ $labels.instance }}."

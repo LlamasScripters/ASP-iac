@@ -121,6 +121,7 @@
     name: asphub_backend
     driver: overlay
     scope: swarm
+    attachable: true
 
 - name: Deploy asphub database stack
   community.docker.docker_stack:
@@ -217,7 +218,7 @@
       docker stack ps asphub_application --format {{  '{{.CurrentState}}' }} | grep -c "Running"
     executable: /bin/bash
   register: asphub_application_services
-  until: asphub_application_services.stdout | int == 2
+  until: asphub_application_services.stdout | int == 4
   retries: 20 # Higher retries count to reduce time
   delay: 1
   changed_when: false

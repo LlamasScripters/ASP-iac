@@ -15,7 +15,7 @@
     data: "{{ proxy_credentials }}"
 
 - name: Create fail2ban config secret
-  community.docker.docker_secret:
+  community.docker.docker_config:
     name: fail2ban_config
     data_src: /app/proxy/fail2ban.yml
 

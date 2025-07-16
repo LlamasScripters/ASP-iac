@@ -9,3 +9,7 @@ output "worker1_ip" {
 output "worker2_ip" {
   value = hcloud_server.worker2.ipv4_address
 }
+
+output "database_ip" {
+  value = hcloud_server.database.ipv4_address
+}

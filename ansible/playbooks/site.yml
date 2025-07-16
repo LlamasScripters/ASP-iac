@@ -35,6 +35,41 @@
         remote_addrs:
           - "192.168.0.100:2377"
 
+- name: Join database node to the cluster
+  tags: swarm
+  hosts: database
+  become: true
+  tasks:
+    - name: Join cluster
+      community.docker.docker_swarm:
+        state: join
+        join_token: "{{ hostvars['swarm_token_worker_holder']['swarm_token_worker'] }}"
+        remote_addrs:
+          - "192.168.0.100:2377"
+
+- name: Label swarm nodes
+  tags: swarm
+  hosts: managers
+  become: true
+  tasks:
+    - name: Add manager node label
+      community.docker.docker_node:
+        hostname: "{{ inventory_hostname }}"
+        labels:
+          "type": "manager"
+    - name: Add database node label
+      community.docker.docker_node:
+        hostname: "{{ hostvars[item]['inventory_hostname'] }}"
+        labels:
+          "type": "database"
+      loop: "{{ groups['database'] }}"
+    - name: Add worker node labels
+      community.docker.docker_node:
+        hostname: "{{ hostvars[item]['inventory_hostname'] }}"
+        labels:
+          "type": "worker"
+      loop: "{{ groups['workers'] }}"
+
 - name: Setup proxy on manager node
   tags: proxy
   hosts: managers

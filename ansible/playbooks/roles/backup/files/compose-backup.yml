@@ -26,10 +26,10 @@ services:
           - node.role == manager
       resources:
         limits:
-          cpus: "0.5"
+          cpus: "0.2"
           memory: "512M"
         reservations:
-          cpus: "0.25"
+          cpus: "0.1"
           memory: "256M"
     # Lancer le conteneur avec cron pour backup quotidien
     command: |

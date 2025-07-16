@@ -24,16 +24,16 @@ services:
     deploy:
       resources:
         reservations:
-          cpus: "0.50"
-          memory: "1024M"
-        limits:
-          cpus: "1.00"
+          cpus: "1.0"
           memory: "2048M"
+        limits:
+          cpus: "1.5"
+          memory: "3072M"
       replicas: 1
       placement:
         max_replicas_per_node: 1
         constraints:
-          - node.role == manager
+          - node.labels.type == database
 
 configs:
   postgres_config:

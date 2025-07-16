@@ -53,6 +53,13 @@ services:
     deploy:
       mode: replicated
       replicas: 1
+      resources:
+        limits:
+          cpus: "2.0"  
+          memory: "2048M"
+        reservations:
+          cpus: "1.0"
+          memory: "1024M"
 
       placement:
       # Placement constraints restrict where Traefik tasks can run.
@@ -62,7 +69,10 @@ services:
       labels:
         - "traefik.enable=true"
 
+        # Enhanced compression middleware
         - "traefik.http.middlewares.compression.compress=true"
+        - "traefik.http.middlewares.compression.compress.minresponsebodybytes=1024"
+        - "traefik.http.middlewares.compression.compress.excludedcontenttypes=image/png,image/jpeg,image/gif,image/webp,video/mp4,application/zip,application/gzip"
 
         # Dashboard router
         - "traefik.http.routers.dashboard.rule=Host(`${PROXY_DOMAIN}`)"
@@ -78,15 +88,22 @@ services:
 
         # Basic‑auth middleware
         - "traefik.http.middlewares.dashboard-auth.basicauth.usersfile=/run/secrets/proxy_users"
-        - "traefik.http.routers.dashboard.middlewares=dashboard-auth@swarm"
+        - "traefik.http.routers.dashboard.middlewares=dashboard-auth@swarm,dashboard-ratelimit@swarm"
+        - "traefik.http.routers.metrics.middlewares=dashboard-auth@swarm,dashboard-ratelimit@swarm"
 
         # Service hint
         - "traefik.http.services.traefik.loadbalancer.server.port=8080"
 
-        # Rate limiting
-        - "traefik.http.middlewares.ratelimit.ratelimit.average=25"
-        - "traefik.http.middlewares.ratelimit.ratelimit.burst=50"
-        - "traefik.http.middlewares.ratelimit.ratelimit.period=5m"
+        # Rate limiting for dashboard (strict)
+        - "traefik.http.middlewares.dashboard-ratelimit.ratelimit.average=10"
+        - "traefik.http.middlewares.dashboard-ratelimit.ratelimit.burst=20"
+        - "traefik.http.middlewares.dashboard-ratelimit.ratelimit.period=1m"
+        - "traefik.http.middlewares.dashboard-ratelimit.ratelimit.sourcecriterion.ipstrategy.depth=1"
+        
+        # Global rate limiting (fallback for services without specific limits)
+        - "traefik.http.middlewares.global-ratelimit.ratelimit.average=1000"
+        - "traefik.http.middlewares.global-ratelimit.ratelimit.burst=2000"
+        - "traefik.http.middlewares.global-ratelimit.ratelimit.period=1m"
 
     networks:
       - traefik_proxy

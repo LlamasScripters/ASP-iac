@@ -5,8 +5,12 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION}'
-      - '--storage.tsdb.retention.size=4GB'
+      - '--storage.tsdb.retention.size=2GB'  # Reduced from 4GB
       - '--storage.tsdb.wal-compression'
+      - '--storage.tsdb.min-block-duration=2h'  # Optimize compaction
+      - '--storage.tsdb.max-block-duration=25h'
+      - '--query.max-concurrency=4'  # Limit concurrent queries
+      - '--query.max-samples=500000'  # Prevent memory exhaustion
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
@@ -28,11 +32,11 @@ services:
           - node.role == manager
       resources:
         limits:
-          cpus: "0.5"
-          memory: "512M"
+          cpus: "0.7"
+          memory: "1536M"
         reservations:
-          cpus: "0.2"
-          memory: "256M"
+          cpus: "0.35"
+          memory: "768M"
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.prometheus.rule=Host(`${PROMETHEUS_DOMAIN}`)"
@@ -55,6 +59,11 @@ services:
       GF_USERS_AUTO_ASSIGN_ORG: "true"
       GF_USERS_AUTO_ASSIGN_ORG_ROLE: "Viewer"
       GF_SMTP_ENABLED: "false"
+      # Performance optimizations
+      GF_DATABASE_WAL: "true"
+      GF_EXPLORE_ENABLED: "false"  # Disable if not needed
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     volumes:
       - grafana_data:/var/lib/grafana
     configs:
@@ -77,8 +86,11 @@ services:
           - node.role == manager
       resources:
         limits:
-          cpus: "0.25"
-          memory: "256M"
+          cpus: "0.4"
+          memory: "1024M"
+        reservations:
+          cpus: "0.2"
+          memory: "512M"
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_DOMAIN}`)"
@@ -105,6 +117,7 @@ services:
       - '--collector.vmstat'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
       - '--web.listen-address=0.0.0.0:9100'
+      - '--web.max-requests=10'  # Limit concurrent requests
     volumes:
       - /:/host:ro,rslave
     networks:
@@ -113,23 +126,25 @@ services:
       mode: global
       resources:
         limits:
-          cpus: "0.3"
-          memory: "200M"
+          cpus: "0.1"
+          memory: "128M"
         reservations:
           cpus: "0.05"
-          memory: "100M"
+          memory: "64M"
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION}
     command:
-      - '--housekeeping_interval=30s'
-      - '--max_housekeeping_interval=35s'
+      - '--housekeeping_interval=45s'  # Increased from 30s
+      - '--max_housekeeping_interval=60s'  # Increased from 35s
       - '--event_storage_event_limit=default=0'
       - '--event_storage_age_limit=default=0'
-      - '--disable_metrics=percpu,sched,tcp,udp,disk,diskIO,hugetlb,referenced_memory,cpu_topology,resctrl'
-      - '--storage_duration=2m'
-      - '--enable_load_reader=true'
+      - '--disable_metrics=percpu,sched,tcp,udp,disk,diskIO,hugetlb,referenced_memory,cpu_topology,resctrl,advtcp,memory_numa'
+      - '--storage_duration=90s'  # Reduced from 2m
+      - '--enable_load_reader=false'  # Disabled to save resources
       - '--docker_only=true'
+      - '--max_procs=1000'  # Limit process monitoring
+      - '--application_metrics_count_limit=100'
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:rw
@@ -142,17 +157,21 @@ services:
       mode: global
       resources:
         limits:
-          cpus: "0.3"
-          memory: "200M"
+          cpus: "0.2"
+          memory: "256M"
         reservations:
-          cpus: "0.05"
-          memory: "100M"
+          cpus: "0.1"
+          memory: "128M"
 
   alertmanager:
     image: prom/alertmanager:${ALERTMANAGER_VERSION}
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
+      - '--data.retention=72h'  # Reduce retention
+      - '--cluster.settle-timeout=5s'
+      - '--web.get-concurrency=4'
+      - '--web.timeout=10s'
     volumes:
       - alertmanager_data:/alertmanager
     configs:
@@ -169,11 +188,11 @@ services:
           - node.role == manager
       resources:
         limits:
-          cpus: "0.5"
+          cpus: "0.1"
           memory: "256M"
         reservations:
-          cpus: "0.1"
-          memory: "64M"
+          cpus: "0.05"
+          memory: "128M"
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.alertmanager.rule=Host(`${ALERTMANAGER_DOMAIN}`)"

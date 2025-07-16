@@ -2,6 +2,7 @@ services:
   client:
     image: ${ASPHUB_CLIENT_IMAGE}:${ASPHUB_CLIENT_VERSION}
     deploy:
+      replicas: 2
       placement:
         max_replicas_per_node: 1
         constraints:
@@ -19,7 +20,7 @@ services:
         max_failure_ratio: 0
       resources:
         limits:
-          cpus: "0.50"
+          cpus: "0.5"
           memory: "512M"
         reservations:
           cpus: "0.25"
@@ -33,6 +34,15 @@ services:
         - "traefik.http.routers.asphub_client.tls.certresolver=letsencrypt"
         - "traefik.http.routers.asphub_client.service=asphub_client"
         - "traefik.http.services.asphub_client.loadbalancer.server.port=80"
+
+        # Rate limiting for client requests (more lenient than API)
+        - "traefik.http.middlewares.client-ratelimit.ratelimit.average=300"
+        - "traefik.http.middlewares.client-ratelimit.ratelimit.burst=600"
+        - "traefik.http.middlewares.client-ratelimit.ratelimit.period=1m"
+        - "traefik.http.middlewares.client-ratelimit.ratelimit.sourcecriterion.ipstrategy.depth=1"
+
+        # Apply compression and rate limiting middleware to client router
+        - "traefik.http.routers.asphub_client.middlewares=compression@swarm,client-ratelimit@swarm"
     networks:
       - proxy_traefik_proxy
 
@@ -41,6 +51,8 @@ services:
     secrets:
       - asphub_env
     deploy:
+      mode: replicated
+      replicas: 2
       placement:
         max_replicas_per_node: 1
         constraints:
@@ -58,11 +70,11 @@ services:
         max_failure_ratio: 0
       resources:
         limits:
-          cpus: "1.00"
+          cpus: "1.0"
           memory: "1024M"
         reservations:
-          cpus: "0.50"
-          memory: "512M"
+          cpus: "0.75"
+          memory: "768M"
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.asphub_server.rule=Host(`${DOMAIN}`) && PathPrefix(`/api`)"
@@ -72,6 +84,15 @@ services:
         - "traefik.http.routers.asphub_server.tls.certresolver=letsencrypt"
         - "traefik.http.routers.asphub_server.service=asphub_server"
         - "traefik.http.services.asphub_server.loadbalancer.server.port=3000"
+
+        # Rate limiting for API endpoints
+        - "traefik.http.middlewares.api-ratelimit.ratelimit.average=150"
+        - "traefik.http.middlewares.api-ratelimit.ratelimit.burst=300"
+        - "traefik.http.middlewares.api-ratelimit.ratelimit.period=1m"
+        - "traefik.http.middlewares.api-ratelimit.ratelimit.sourcecriterion.ipstrategy.depth=1"
+
+        # Apply compression and rate limiting middleware to server router
+        - "traefik.http.routers.asphub_server.middlewares=compression@swarm,api-ratelimit@swarm"
     environment:
       NODE_ENV: production
       HOST: ${HOST}

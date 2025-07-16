@@ -168,34 +168,21 @@
   delay: 5
   changed_when: false
 
-- name: Deploy asphub init-db service
-  community.docker.docker_stack:
-    name: asphub_init_db
-    state: present
-    detach: true
-    compose: /app/asphub/compose-init-db.yml
-    with_registry_auth: true
-  environment:
-    ASPHUB_SERVER_IMAGE: "{{ asphub_server_image }}"
-    ASPHUB_SERVER_VERSION: "{{ asphub_server_version }}"
-    DATABASE_URL: "{{ asphub_env_vars.DATABASE_URL }}"
-
-- name: Wait for init-db to complete
-  ansible.builtin.shell:
-    cmd: |
-      set -o pipefail
-      docker service ps asphub_init_db_init-db --format "{{ '{{.CurrentState}}' }}" | grep -c "Complete"
-    executable: /bin/bash
-  register: init_db_state_result
-  until: init_db_state_result.stdout | int >= 1
-  retries: 20 # Higher retries count to reduce migration time
-  delay: 1
-  changed_when: false
-
-- name: Remove init-db stack after completion
-  community.docker.docker_stack:
-    name: asphub_init_db
-    state: absent
+- name: Run database migrations
+  community.docker.docker_container:
+    name: asphub_init_db_temp
+    image: "{{ asphub_server_image }}:{{ asphub_server_version }}"
+    state: started
+    detach: false
+    cleanup: true
+    networks:
+      - name: asphub_backend
+    env:
+      DATABASE_URL: "{{ asphub_env_vars.DATABASE_URL }}"
+    command: ["npx", "drizzle-kit", "migrate"]
+  tags:
+    - init-db
+    - migrations
 
 - name: Deploy asphub application stack
   community.docker.docker_stack:
@@ -210,6 +197,18 @@
     ASPHUB_CLIENT_VERSION: "{{ asphub_client_version }}"
     ASPHUB_SERVER_IMAGE: "{{ asphub_server_image }}"
     ASPHUB_SERVER_VERSION: "{{ asphub_server_version }}"
+    HOST: 'https://{{ domain }}'
+    DATABASE_URL: '{{ asphub_env_vars.DATABASE_URL }}'
+    BETTER_AUTH_SECRET: '{{ asphub_env_vars.BETTER_AUTH_SECRET }}'
+    BETTER_AUTH_URL: '{{ asphub_env_vars.BETTER_AUTH_URL }}'
+    GOOGLE_CLIENT_ID: '{{ asphub_env_vars.GOOGLE_CLIENT_ID }}'
+    GOOGLE_CLIENT_SECRET: '{{ asphub_env_vars.GOOGLE_CLIENT_SECRET }}'
+    BREVO_API_KEY: '{{ asphub_env_vars.BREVO_API_KEY }}'
+    S3_ACCESS_KEY_ID: '{{ asphub_env_vars.S3_ACCESS_KEY_ID }}'
+    S3_SECRET_ACCESS_KEY: '{{ asphub_env_vars.S3_SECRET_ACCESS_KEY }}'
+    S3_REGION: '{{ asphub_env_vars.S3_REGION }}'
+    S3_BUCKET: '{{ asphub_env_vars.S3_BUCKET }}'
+    S3_ENDPOINT: '{{ asphub_env_vars.S3_ENDPOINT }}'
 
 - name: Wait for application stack services to be ready
   ansible.builtin.shell:

@@ -73,8 +73,20 @@ services:
         - "traefik.http.routers.asphub_server.service=asphub_server"
         - "traefik.http.services.asphub_server.loadbalancer.server.port=3000"
     environment:
-      - NODE_ENV=production
-      - ENV_FILE=/run/secrets/asphub_env
+      NODE_ENV: production
+      HOST: ${HOST}
+      DATABASE_URL: ${DATABASE_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      BREVO_API_KEY: ${BREVO_API_KEY}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_REGION: ${S3_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+
     networks:
       - asphub_backend
       - proxy_traefik_proxy

@@ -194,7 +194,7 @@ data "ovh_domain_zone" "root_zone" {
 
 locals {
   domain     = data.ovh_domain_zone.root_zone.name
-  subdomains = ["grafana", "traefik", "asphub", "prometheus", "alertmanager"]
+  subdomains = ["grafana", "traefik", "asphub", "prometheus", "alertmanager", "uptime"]
 }
 
 resource "ovh_domain_zone_record" "primary_dns" {

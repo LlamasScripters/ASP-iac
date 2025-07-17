@@ -30,7 +30,7 @@ services:
           memory: "256M"
           
     networks:
-      - traefik_proxy
+      - proxy_traefik_proxy
 
 networks:
   traefik_proxy:

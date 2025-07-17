@@ -33,7 +33,7 @@ services:
       - proxy_traefik_proxy
 
 networks:
-  traefik_proxy:
+  proxy_traefik_proxy:
     external: true
 
 volumes:

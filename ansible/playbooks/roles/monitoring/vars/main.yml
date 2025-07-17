@@ -3,6 +3,7 @@
 monitoring_grafana_domain: grafana.mchegdali.cloud
 monitoring_prometheus_domain: prometheus.mchegdali.cloud
 monitoring_alertmanager_domain: alertmanager.mchegdali.cloud
+monitoring_uptime_kuma_domain: uptime.mchegdali.cloud
 
 # Prometheus Configuration
 monitoring_prometheus_version: "v2.55.1"
@@ -23,6 +24,9 @@ monitoring_cadvisor_version: "v0.52.1"
 # AlertManager Configuration
 monitoring_alertmanager_version: "v0.28.1"
 monitoring_discord_webhook_url: "{{ vault_discord_webhook_url | default('https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN') }}"
+
+# Uptime Kuma Configuration
+monitoring_uptime_kuma_version: "1.23.15"
 
 # Docker Config Names
 grafana_asphub_overview_dashboard_name: "grafana_asphub_overview_dashboard_{{ ansible_date_time.iso8601_basic_short }}"

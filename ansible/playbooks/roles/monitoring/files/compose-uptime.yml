@@ -1,0 +1,40 @@
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:${UPTIME_KUMA_VERSION}
+    volumes:
+      - uptime_data:/app/data
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        - "traefik.enable=true"
+        
+        # Router configuration
+        - "traefik.http.routers.uptime.rule=Host(`${UPTIME_KUMA_DOMAIN}`)"
+        - "traefik.http.routers.uptime.entrypoints=websecure"
+        - "traefik.http.routers.uptime.tls=true"
+        - "traefik.http.routers.uptime.tls.certresolver=letsencrypt"
+        
+        # Service configuration
+        - "traefik.http.services.uptime.loadbalancer.server.port=3001"
+        
+        # Middlewares
+        - "traefik.http.routers.uptime.middlewares=global-ratelimit@swarm"
+        
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
+        reservations:
+          cpus: "0.5"
+          memory: "256M"
+          
+    networks:
+      - traefik_proxy
+
+networks:
+  traefik_proxy:
+    external: true
+
+volumes:
+  uptime_data:

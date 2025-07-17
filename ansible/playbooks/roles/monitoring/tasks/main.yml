@@ -33,6 +33,10 @@
   community.docker.docker_image_pull:
     name: "prom/alertmanager:{{ monitoring_alertmanager_version }}"
 
+- name: Pull Uptime Kuma image
+  community.docker.docker_image_pull:
+    name: "louislam/uptime-kuma:{{ monitoring_uptime_kuma_version }}"
+
 - name: Create monitoring base directory
   ansible.builtin.file:
     path: /app/monitoring
@@ -61,6 +65,12 @@
   ansible.builtin.copy:
     src: grafana/
     dest: /app/monitoring/grafana/
+    mode: "0644"
+
+- name: Copy Uptime Kuma compose file
+  ansible.builtin.copy:
+    src: compose-uptime.yml
+    dest: /app/monitoring/compose-uptime.yml
     mode: "0644"
 
 - name: Template AlertManager configuration
@@ -177,3 +187,26 @@
       - "Prometheus: https://{{ monitoring_prometheus_domain }}"
       - "AlertManager: https://{{ monitoring_alertmanager_domain }}"
       - "Default Grafana credentials: {{ monitoring_grafana_admin_user }}/admin123" # show default password for security
+      - "Uptime Kuma: https://{{ monitoring_uptime_kuma_domain }}"
+
+- name: Deploy Uptime Kuma stack
+  community.docker.docker_stack:
+    name: uptime
+    state: present
+    detach: true
+    compose: /app/monitoring/compose-uptime.yml
+  environment:
+    UPTIME_KUMA_VERSION: "{{ monitoring_uptime_kuma_version }}"
+    UPTIME_KUMA_DOMAIN: "{{ monitoring_uptime_kuma_domain }}"
+
+- name: Wait for Uptime Kuma service to be ready
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      docker service ls --filter name=uptime_uptime-kuma --format "{{ '{{.Replicas}}' }}" | grep -c "1/1"
+    executable: /bin/bash
+  register: uptime_ready
+  until: uptime_ready.stdout | int == 1
+  retries: 10
+  delay: 5
+  changed_when: false

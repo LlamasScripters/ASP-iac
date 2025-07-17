@@ -29,7 +29,7 @@ Ce projet fournit une infrastructure complète en **Infrastructure as Code (IaC)
 - **Orchestration** : Docker Swarm (1 manager + 2 workers)
 - **Configuration** : Ansible avec rôles modulaires
 - **Reverse Proxy** : Traefik v3.4 avec SSL automatique (Let's Encrypt)
-- **Monitoring** : Prometheus + Grafana + AlertManager
+- **Monitoring** : Prometheus + Grafana + AlertManager + Uptime Kuma
 - **Stockage** : PostgreSQL + MinIO
 - **Sécurité** : Certificats SSL automatiques, authentification, secrets Docker
 
@@ -56,6 +56,7 @@ Ce projet fournit une infrastructure complète en **Infrastructure as Code (IaC)
 │  • prometheus.mchegdali.cloud                               │
 │  • traefik.mchegdali.cloud                                  │
 │  • alertmanager.mchegdali.cloud                             │
+│  • uptime.mchegdali.cloud                                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -69,7 +70,8 @@ Ce projet fournit une infrastructure complète en **Infrastructure as Code (IaC)
 │  ├── Traefik (Reverse Proxy + SSL)                         │
 │  ├── Prometheus (Métriques)                                │
 │  ├── Grafana (Dashboards)                                  │
-│  └── AlertManager (Alertes)                                │
+│  ├── AlertManager (Alertes)                                │
+│  └── Uptime Kuma (Monitoring disponibilité)                │
 │                                                            │
 │  Worker Nodes (192.168.0.101-102)                          │
 │  ├── ASPHub Client (Frontend React)                        │
@@ -310,6 +312,17 @@ ansible-playbook playbooks/site.yml
   - Alertes applicatives
   - Notifications sur Discord (possibilité d'ajouter d'autres moyens comme les emails, Slack, ...)
 
+#### Uptime Kuma
+- **URL** : `https://uptime.mchegdali.cloud`
+- **Monitoring de disponibilité** :
+  - Surveillance HTTP/HTTPS des services
+  - Vérification des certificats SSL
+  - Monitoring TCP/UDP des ports
+  - Status pages publiques
+  - Alertes en temps réel
+  - Historique de disponibilité (uptime)
+  - Métriques de temps de réponse
+
 ## 📊 Surveillance et monitoring
 
 ### Dashboards Grafana
@@ -328,6 +341,36 @@ ansible-playbook playbooks/site.yml
    - Santé des serveurs
    - Utilisation CPU/RAM/Disk
    - Métriques réseau
+
+4. **Backup Dashboard**
+   - État des sauvegardes
+   - Métriques de rétention
+   - Alertes backup
+
+### Monitoring de disponibilité (Uptime Kuma)
+
+Uptime Kuma surveille en continu la disponibilité de tous les services :
+
+#### **Services surveillés** :
+- ✅ **ASPHub Frontend** : `https://mchegdali.cloud`
+- ✅ **ASPHub API** : `https://mchegdali.cloud/api/health`
+- ✅ **Grafana** : `https://grafana.mchegdali.cloud`
+- ✅ **Prometheus** : `https://prometheus.mchegdali.cloud`
+- ✅ **AlertManager** : `https://alertmanager.mchegdali.cloud`
+- ✅ **Traefik Dashboard** : `https://traefik.mchegdali.cloud`
+
+#### **Fonctionnalités** :
+- 📊 **Métriques temps réel** : Temps de réponse, statut HTTP
+- 📈 **Historique** : Graphiques de disponibilité sur 24h/7j/30j
+- 🚨 **Alertes instantanées** : Notifications dès qu'un service devient indisponible
+- 📋 **Status Page** : Page publique de statut des services
+- 🔒 **Monitoring SSL** : Vérification automatique des certificats et alertes d'expiration
+
+#### **Configuration** :
+- **Intervalle de vérification** : 60 secondes
+- **Timeout** : 10 secondes
+- **Retry** : 3 tentatives avant alerte
+- **Alertes** : Discord webhook (configurable pour email, Slack, etc.)
 
 ### Alertes configurées
 
@@ -579,7 +622,31 @@ ansible-lint playbooks/
 
 ---
 
-## 📚 Ressources additionnelles
+## � URLs d'accès rapide
+
+### **Services principaux**
+| Service | URL | Description |
+|---------|-----|-------------|
+| 🌐 **ASPHub Frontend** | `https://mchegdali.cloud` | Application React principale |
+| 🔧 **ASPHub API** | `https://mchegdali.cloud/api` | Backend Node.js REST API |
+
+### **Infrastructure & Monitoring**
+| Service | URL | Description |
+|---------|-----|-------------|
+| 🚦 **Traefik Dashboard** | `https://traefik.mchegdali.cloud` | Reverse proxy & SSL |
+| 📊 **Grafana** | `https://grafana.mchegdali.cloud` | Dashboards & visualisation |
+| 📈 **Prometheus** | `https://prometheus.mchegdali.cloud` | Métriques & monitoring |
+| 🚨 **AlertManager** | `https://alertmanager.mchegdali.cloud` | Gestion des alertes |
+| ⏱️ **Uptime Kuma** | `https://uptime.mchegdali.cloud` | Monitoring de disponibilité |
+
+### **Credentials par défaut**
+- **Grafana** : `admin` / `admin123` (à changer après premier login)
+- **Traefik** : Authentification via secrets Docker
+- **Uptime Kuma** : Configuration initiale requise au premier accès
+
+---
+
+## �📚 Ressources additionnelles
 
 - [Documentation Terraform](https://www.terraform.io/docs)
 - [Documentation Ansible](https://docs.ansible.com/)

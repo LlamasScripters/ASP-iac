@@ -26,7 +26,7 @@ Ce projet fournit une infrastructure complète en **Infrastructure as Code (IaC)
 ### 🏗️ Stack technologique
 
 - **Infrastructure** : Terraform + Hetzner Cloud + OVH DNS
-- **Orchestration** : Docker Swarm (1 manager + 2 workers)
+- **Orchestration** : Docker Swarm (1 manager + 2 workers + 1 database)
 - **Configuration** : Ansible avec rôles modulaires
 - **Reverse Proxy** : Traefik v3.4 avec SSL automatique (Let's Encrypt)
 - **Monitoring** : Prometheus + Grafana + AlertManager + Uptime Kuma
@@ -39,15 +39,21 @@ Ce projet fournit une infrastructure complète en **Infrastructure as Code (IaC)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Hetzner Cloud (nbg1)                   │
+│                     Hetzner Cloud (nbg1)                    │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │
 │  │   Manager Node  │  │   Worker Node 1 │  │ Worker Node 2│ │
 │  │  192.168.0.100  │  │  192.168.0.101  │  │192.168.0.102 │ │
 │  │     (cx22)      │  │     (cx22)      │  │    (cx22)    │ │
 │  └─────────────────┘  └─────────────────┘  └──────────────┘ │
+│                                                             │
+│                       ┌─────────────────┐                   │
+│                       │ Database Node   │                   │
+│                       │  192.168.0.103  │                   │
+│                       │     (cx22)      │                   │
+│                       └─────────────────┘                   │
 └─────────────────────────────────────────────────────────────┘
-                              │
+                                │
 ┌─────────────────────────────────────────────────────────────┐
 │                      OVH DNS                                │
 ├─────────────────────────────────────────────────────────────┤
@@ -71,13 +77,19 @@ Ce projet fournit une infrastructure complète en **Infrastructure as Code (IaC)
 │  ├── Prometheus (Métriques)                                │
 │  ├── Grafana (Dashboards)                                  │
 │  ├── AlertManager (Alertes)                                │
-│  └── Uptime Kuma (Monitoring disponibilité)                │
+│  ├── Uptime Kuma (Monitoring disponibilité)                │
+│  ├── Node Exporter (Métriques système)                     │
+│  └── cAdvisor (Métriques conteneurs)                       │
 │                                                            │
 │  Worker Nodes (192.168.0.101-102)                          │
 │  ├── ASPHub Client (Frontend React)                        │
 │  ├── ASPHub Server (Backend Node.js)                       │
-│  ├── PostgreSQL (Base de données)                          │
 │  ├── MinIO (Stockage objets)                               │
+│  ├── Node Exporter (Métriques système)                     │
+│  └── cAdvisor (Métriques conteneurs)                       │
+│                                                            │
+│  Database Node (192.168.0.103)                             │
+│  ├── PostgreSQL (Base de données)                          │
 │  ├── Node Exporter (Métriques système)                     │
 │  └── cAdvisor (Métriques conteneurs)                       │
 └────────────────────────────────────────────────────────────┘
@@ -110,7 +122,7 @@ Internet → Traefik → [ASPHub Client|ASPHub Server] → PostgreSQL/MinIO
 1. **Hetzner Cloud**
    - Compte actif avec facturation configurée
    - Token API avec permissions complètes
-   - Budget recommandé : ~30€/mois pour la production
+   - Budget recommandé : ~30€/mois pour la production (3 serveurs cx22 + 1 serveurs cx32)
 
 2. **OVH**
    - Domaine enregistré (ex: `mchegdali.cloud`)
@@ -292,8 +304,8 @@ ansible-playbook playbooks/site.yml
 #### Prometheus
 - **URL** : `https://prometheus.mchegdali.cloud`
 - **Métriques collectées** :
-  - Système (Node Exporter)
-  - Conteneurs (cAdvisor)
+  - Système (Node Exporter sur tous les nœuds)
+  - Conteneurs (cAdvisor sur tous les nœuds) 
   - Applications (métriques custom)
   - Traefik (métriques intégrées)
 
@@ -417,7 +429,7 @@ terraform/envs/
 
 | Aspect | Production | Staging |
 |--------|------------|---------|
-| **Serveurs** | 3x cx22 (4GB RAM) | 3x cx22 (4GB RAM) |
+| **Serveurs** | 4x cx22 (4GB RAM) | 4x cx22 (4GB RAM) |
 | **Domaine** | mchegdali.cloud | staging.mchegdali.cloud |
 | **SSL** | Let's Encrypt Prod | Let's Encrypt Staging |
 | **Backups** | Quotidiens | Hebdomadaires |
